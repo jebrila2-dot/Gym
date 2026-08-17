@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gym — Lift &amp; Run</title>
+  <meta name="description" content="Personal gym tracker, workout organiser and marathon trainer.">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar"></header>
+    <main id="view" tabindex="-1"></main>
+    <nav id="tabbar" aria-label="Sections"></nav>
+  </div>
+  <div id="timer-pill" hidden></div>
+  <div id="toast-root" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <script src="js/util.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/exercises.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/marathon.js"></script>
+  <script src="js/view-today.js"></script>
+  <script src="js/view-lift.js"></script>
+  <script src="js/view-plan.js"></script>
+  <script src="js/view-run.js"></script>
+  <script src="js/view-progress.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
