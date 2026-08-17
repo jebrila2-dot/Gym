@@ -45,6 +45,7 @@ const Store = (() => {
       }
     } catch (e) { console.warn('Could not load saved data:', e); }
     if (!state.seeded) { seed(); state.seeded = true; save(); }
+    else migrate();
   }
 
   function save() {
@@ -301,47 +302,149 @@ const Store = (() => {
     return state.runs.filter(r => r.date >= mondayISO && r.date <= end);
   }
 
+  /* ---------------- evidence-based rest & step defaults ---------------- */
+
+  // Recommended rest between sets, by exercise character (compounds long, isolation short).
+  function restFor(ex) {
+    if (!ex) return null;
+    if (ex.group === 'core' || ex.track === 'time') return 60;
+    const p = ex.pattern;
+    if (['back-squat', 'front-squat', 'box-squat', 'deadlift', 'sumo-deadlift', 'trapbar-deadlift', 'bb-bench', 'cg-bench', 'rack-pull'].includes(ex.id)) return 180;
+    if (p === 'squat' || p === 'hinge') return ex.equipment === 'barbell' || ex.equipment === 'machine' ? 150 : 120;
+    if (p === 'hpush' || p === 'vpush' || p === 'hpull' || p === 'vpull')
+      return ex.equipment === 'barbell' || ex.equipment === 'bodyweight' ? 150 : 120;
+    if (p === 'lunge' || p === 'power') return 120;
+    if (p === 'calf') return ex.id === 'seated-calf-raise' ? 60 : 75;
+    if (p === 'grip') return 60;
+    if (p === 'iso-quad' || p === 'iso-ham' || p === 'iso-glute' || p === 'iso-chest' || p === 'iso-rear') return 90;
+    return 75; // small isolation: curls, extensions, raises
+  }
+
+  // Adaptive weight-step for the stepper strip (display units). Big lifts jump
+  // bigger; small dumbbell/cable isolation jumps smaller. Overridable per exercise.
+  const BIG_STEP_IDS = ['deadlift', 'sumo-deadlift', 'trapbar-deadlift', 'rack-pull', 'back-squat', 'front-squat', 'box-squat', 'leg-press', 'hack-squat', 'hip-thrust', 'bb-shrug'];
+  const SMALL_STEP_GROUPS = ['shoulders', 'biceps', 'triceps', 'forearms', 'core'];
+
+  function stepKey(exId) { return exId + ':' + state.settings.units; }
+
+  function stepFor(ex) {
+    if (!ex) return metric() ? 2.5 : 5;
+    const custom = state.settings.steps && state.settings.steps[stepKey(ex.id)];
+    if (custom) return custom;
+    if (BIG_STEP_IDS.includes(ex.id)) return metric() ? 5 : 10;
+    if ((ex.equipment === 'dumbbell' || ex.equipment === 'kettlebell' || ex.equipment === 'cable') && SMALL_STEP_GROUPS.includes(ex.group))
+      return metric() ? 1 : 2.5;
+    return metric() ? 2.5 : 5;
+  }
+
+  function stepCycle() { return metric() ? [0.5, 1, 2.5, 5, 10] : [1, 2.5, 5, 10, 25]; }
+
+  function cycleStep(ex) {
+    const cyc = stepCycle();
+    const cur = stepFor(ex);
+    let idx = cyc.findIndex(v => Math.abs(v - cur) < 0.01);
+    if (idx < 0) idx = 1;
+    const next = cyc[(idx + 1) % cyc.length];
+    state.settings.steps = state.settings.steps || {};
+    state.settings.steps[stepKey(ex.id)] = next;
+    save();
+    return next;
+  }
+
+  /* ---------------- weekly muscle volume (for the balance panel) ---------------- */
+
+  const SECONDARY_MAP = {
+    'triceps': 'triceps', 'biceps': 'biceps', 'brachialis': 'biceps',
+    'front delts': 'shoulders', 'rear delts': 'shoulders', 'shoulders': 'shoulders',
+    'chest': 'chest', 'upper chest': 'chest',
+    'lats': 'back', 'upper back': 'back', 'traps': 'back', 'lower back': 'back', 'back': 'back',
+    'core': 'core', 'obliques': 'core', 'hip flexors': 'core',
+    'hamstrings': 'hamstrings', 'glutes': 'glutes', 'quads': 'quads', 'legs': 'quads',
+    'calves': 'calves', 'soleus': 'calves', 'shins': 'calves',
+    'forearms': 'forearms', 'grip': 'forearms',
+    'adductors': 'glutes', 'hip stabilisers': 'glutes',
+  };
+
+  // Direct sets count 1, secondary-muscle sets count ½ — a common accounting rule.
+  function weeklyMuscleSets() {
+    const sets = {};
+    const bump = (g, n) => { if (g) sets[g] = (sets[g] || 0) + n; };
+    for (const dow of Object.keys(state.schedule)) {
+      const r = state.routines.find(x => x.id === state.schedule[dow]);
+      if (!r) continue;
+      for (const it of r.items) {
+        const ex = exById(it.exerciseId);
+        if (!ex || ex.group === 'cardio') continue;
+        bump(ex.group === 'full' ? 'quads' : ex.group, it.sets);
+        for (const s of (ex.secondary || [])) bump(SECONDARY_MAP[s], it.sets * 0.5);
+      }
+    }
+    return sets;
+  }
+
   /* ---------------- seed data: starter routines ---------------- */
 
-  function item(exerciseId, sets, repsMin, repsMax) { return { exerciseId, sets, repsMin, repsMax }; }
+  function findEx(id) { return EXDB.list.find(e => e.id === id); }
+
+  function item(exerciseId, sets, repsMin, repsMax) {
+    return { exerciseId, sets, repsMin, repsMax, restSec: restFor(findEx(exerciseId)) };
+  }
+
+  const SEED_NAMES = ['Push Day', 'Pull Day', 'Leg Day', 'Upper Body', 'Lower Body', 'Full Body A', 'Full Body B', 'Full Body C', 'Runner’s Strength', 'Core Express'];
+
+  function buildFullBodyC() {
+    return {
+      id: 'r-' + U.uid(),
+      name: 'Full Body C',
+      note: 'Upper pump + core — legs stay fresh for the weekend long run',
+      items: [
+        item('ohp', 3, 6, 10), item('cable-row', 3, 10, 12), item('db-bench', 3, 8, 12),
+        item('face-pull', 3, 12, 20), item('hammer-curl', 2, 10, 15), item('rope-oh-ext', 2, 10, 15),
+        item('pallof-press', 2, 10, 12), item('side-plank', 2, 30, 45),
+      ],
+    };
+  }
 
   function seed() {
     const mk = (name, note, items) => ({ id: 'r-' + U.uid(), name, note, items });
     const r = {
-      push: mk('Push Day', 'Chest · shoulders · triceps', [
+      fullA: mk('Full Body A', 'Upper-focus full body — ideal the day after your long run', [
+        item('bb-bench', 4, 5, 8), item('cs-row', 3, 8, 12), item('db-shoulder-press', 3, 8, 12),
+        item('lat-pulldown', 3, 10, 12), item('lying-leg-curl', 3, 10, 15),
+        item('ez-curl', 2, 10, 15), item('pushdown', 2, 10, 15),
+      ]),
+      fullB: mk('Full Body B', 'Lower-focus full body — pair with your quality-run day (hard days hard)', [
+        item('back-squat', 4, 5, 8), item('rdl', 3, 8, 10), item('leg-press', 2, 10, 12),
+        item('pull-up', 3, 5, 10), item('db-incline-bench', 3, 8, 12),
+        item('standing-calf-raise', 3, 10, 15), item('seated-calf-raise', 2, 12, 20),
+      ]),
+      fullC: buildFullBodyC(),
+      push: mk('Push Day', 'Chest · shoulders · triceps — part of a 5–6-day split', [
         item('bb-bench', 4, 5, 8), item('ohp', 3, 6, 10), item('db-incline-bench', 3, 8, 12),
         item('cable-fly', 3, 12, 15), item('lateral-raise', 4, 12, 20), item('pushdown', 3, 10, 15),
       ]),
-      pull: mk('Pull Day', 'Back · rear delts · biceps', [
+      pull: mk('Pull Day', 'Back · rear delts · biceps — part of a 5–6-day split', [
         item('deadlift', 2, 3, 5), item('pull-up', 3, 5, 10), item('cable-row', 3, 8, 12),
         item('lat-pulldown', 3, 10, 12), item('face-pull', 3, 12, 20), item('ez-curl', 3, 8, 12),
         item('hammer-curl', 3, 10, 15),
       ]),
-      legs: mk('Leg Day', 'Quads · hamstrings · calves', [
+      legs: mk('Leg Day', 'Quads · hamstrings · calves — part of a 5–6-day split', [
         item('back-squat', 4, 5, 8), item('rdl', 3, 8, 10), item('leg-press', 3, 10, 12),
         item('lying-leg-curl', 3, 10, 15), item('standing-calf-raise', 4, 10, 15), item('plank', 3, 45, 60),
       ]),
-      upper: mk('Upper Body', 'Push + pull in one session', [
+      upper: mk('Upper Body', 'Push + pull in one session — for 4 lift days/week', [
         item('bb-bench', 4, 6, 10), item('bb-row', 4, 6, 10), item('ohp', 3, 8, 12),
         item('lat-pulldown', 3, 8, 12), item('lateral-raise', 3, 12, 20), item('db-curl', 3, 10, 15),
         item('pushdown', 3, 10, 15),
       ]),
-      lower: mk('Lower Body', 'Squat + hinge focus', [
+      lower: mk('Lower Body', 'Squat + hinge focus — for 4 lift days/week', [
         item('back-squat', 4, 6, 10), item('rdl', 3, 8, 12), item('bss', 3, 8, 12),
         item('lying-leg-curl', 3, 10, 15), item('standing-calf-raise', 4, 10, 15), item('hanging-knee-raise', 3, 10, 15),
       ]),
-      fullA: mk('Full Body A', 'Squat-led whole-body session', [
-        item('back-squat', 3, 5, 8), item('bb-bench', 3, 5, 8), item('bb-row', 3, 8, 10),
-        item('rdl', 2, 8, 12), item('plank', 3, 30, 60),
-      ]),
-      fullB: mk('Full Body B', 'Hinge-led whole-body session', [
-        item('deadlift', 2, 3, 5), item('ohp', 3, 5, 8), item('lat-pulldown', 3, 8, 12),
-        item('bss', 2, 10, 12), item('hanging-knee-raise', 3, 10, 15),
-      ]),
       runner: mk('Runner’s Strength', 'Injury-proofing for marathon training — 2×/week', [
         item('goblet-squat', 3, 8, 12), item('sl-rdl', 3, 8, 10), item('step-up', 3, 8, 10),
-        item('hip-thrust', 3, 8, 12), item('standing-calf-raise', 3, 12, 15), item('side-plank', 3, 30, 45),
-        item('nordic-curl', 3, 4, 6),
+        item('hip-thrust', 3, 8, 12), item('standing-calf-raise', 3, 12, 15), item('seated-calf-raise', 2, 12, 15),
+        item('side-plank', 3, 30, 45), item('nordic-curl', 3, 4, 6), item('tibialis-raise', 2, 15, 20),
       ]),
       core: mk('Core Express', '~12 minutes, no excuses', [
         item('plank', 3, 40, 60), item('dead-bug', 3, 10, 12), item('side-plank', 2, 30, 45),
@@ -349,8 +452,35 @@ const Store = (() => {
       ]),
     };
     state.routines = Object.values(r);
-    // Sensible default week: lift Mon/Wed/Fri, leave run days to the marathon plan
-    state.schedule = { 0: r.push.id, 1: '', 2: r.pull.id, 3: '', 4: r.legs.id, 5: '', 6: '' };
+    // Recommended week: full-body Mon/Wed/Fri so every muscle is hit 2–3×,
+    // with the lower-body day beside the quality run and Friday leg-free.
+    state.schedule = { 0: r.fullA.id, 1: '', 2: r.fullB.id, 3: '', 4: r.fullC.id, 5: '', 6: '' };
+  }
+
+  /* Non-destructive upgrades for data created by earlier versions. */
+  function migrate() {
+    state.migrations = state.migrations || {};
+    if (!state.migrations.m2) {
+      // 1) add Full Body C if absent
+      if (!state.routines.some(r => r.name === 'Full Body C')) {
+        state.routines.push(buildFullBodyC());
+      }
+      // 2) runner's routine gains soleus + tibialis work
+      const runner = state.routines.find(r => r.name === 'Runner’s Strength');
+      if (runner) {
+        if (!runner.items.some(i => i.exerciseId === 'seated-calf-raise')) runner.items.push(item('seated-calf-raise', 2, 12, 15));
+        if (!runner.items.some(i => i.exerciseId === 'tibialis-raise')) runner.items.push(item('tibialis-raise', 2, 15, 20));
+      }
+      // 3) fill recommended rest times where routines still use the global default
+      for (const r of state.routines) {
+        if (!SEED_NAMES.includes(r.name)) continue;
+        for (const it of r.items) {
+          if (it.restSec == null) it.restSec = restFor(exById(it.exerciseId));
+        }
+      }
+      state.migrations.m2 = true;
+      save();
+    }
   }
 
   /* ---------------- public ---------------- */
@@ -363,5 +493,6 @@ const Store = (() => {
     e1rm, bestSetOf, exHistory, lastPerformance, prsFor, detectPRs,
     workoutTonnage, workoutSets, weeklyLifting, activityByDay, streakDays,
     addRun, updateRun, deleteRun, runsInWeek,
+    restFor, stepFor, cycleStep, weeklyMuscleSets,
   };
 })();

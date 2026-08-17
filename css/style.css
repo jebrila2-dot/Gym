@@ -831,6 +831,37 @@ body.has-timer #view { padding-top: 56px; }
 /* show-more */
 .show-more { margin-top: 10px; }
 
+/* progression chip */
+.prog-chip {
+  appearance: none; cursor: pointer;
+  display: flex; align-items: flex-start; gap: 8px; width: 100%;
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px solid transparent; border-radius: 11px;
+  padding: 9px 12px; margin-top: 8px;
+  font-size: 12.5px; font-weight: 650; text-align: left; line-height: 1.4;
+  -webkit-tap-highlight-color: transparent;
+}
+.prog-chip:active { transform: scale(.99); }
+.prog-chip .ic { color: var(--accent); width: 16px; height: 16px; margin-top: 1px; }
+
+/* weekly muscle balance */
+.bal-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.bal-name { width: 86px; flex: none; font-size: 12.5px; font-weight: 650; color: var(--ink-2); }
+.bal-meter { flex: 1; height: 12px; border-radius: 999px; background: var(--surface-2); position: relative; overflow: hidden; }
+.bal-band { position: absolute; left: calc(10 / 24 * 100%); width: calc(10 / 24 * 100%); top: 0; bottom: 0; background: var(--surface-3); }
+.bal-fill { position: relative; height: 100%; border-radius: 999px; background: var(--viz-deemph); min-width: 2px; transition: width .3s ease; }
+.bal-fill.in-band { background: var(--viz-s1); }
+.bal-fill.high { background: var(--warn); }
+.bal-n { width: 34px; flex: none; text-align: right; font-size: 12.5px; font-weight: 700; color: var(--ink); }
+
+/* guide */
+.guide-p { font-size: 14px; line-height: 1.6; color: var(--ink-2); margin-bottom: 10px; }
+.guide-tip { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--ink-2); padding: 4px 0; }
+.guide-tip .ic { width: 15px; height: 15px; margin-top: 2px; flex: none; }
+.guide-tip.avoid .ic { color: var(--crit); }
+.howto { margin: 0; padding-left: 20px; }
+.howto li { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); margin-bottom: 5px; }
+
 ::-webkit-scrollbar { height: 8px; width: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 8px; }
 

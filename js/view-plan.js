@@ -20,7 +20,7 @@ Views.plan = {
     if (vs.editing) { this.renderEditor(stack, vs.editing); root.appendChild(stack); return; }
 
     const seg = U.el('div', { class: 'seg', role: 'tablist' });
-    for (const [key, label] of [['schedule', 'Schedule'], ['routines', 'Routines'], ['library', 'Exercises']]) {
+    for (const [key, label] of [['schedule', 'Schedule'], ['routines', 'Routines'], ['library', 'Exercises'], ['guide', 'Guide']]) {
       const b = U.el('button', { class: vs.sub === key ? 'on' : '', type: 'button', text: label });
       b.addEventListener('click', () => { vs.sub = key; App.render(); });
       seg.appendChild(b);
@@ -29,9 +29,55 @@ Views.plan = {
 
     if (vs.sub === 'schedule') this.renderSchedule(stack);
     else if (vs.sub === 'routines') this.renderRoutines(stack);
+    else if (vs.sub === 'guide') this.renderGuide(stack);
     else this.renderLibrary(stack);
 
     root.appendChild(stack);
+  },
+
+  /* ================= training guide ================= */
+
+  renderGuide(stack) {
+    const card = U.el('div', { class: 'card' });
+    card.appendChild(U.el('div', { class: 'card-head' }, [U.el('h2', { text: 'Training guide' })]));
+    card.appendChild(U.el('p', {
+      class: 'small muted', style: 'margin-bottom:6px',
+      text: 'Short, evidence-based chapters on getting stronger while training for the marathon. General guidance, not medical advice.',
+    }));
+    const list = U.el('div', { class: 'rowlist' });
+    for (const ch of GUIDE) {
+      const row = U.el('div', { class: 'row tappable', onclick: () => this.guideChapter(ch) });
+      row.appendChild(ic(ch.icon, 'accent'));
+      row.appendChild(U.el('div', { class: 'grow' }, [
+        U.el('div', { class: 'title', text: ch.title }),
+        U.el('div', { class: 'sub', text: ch.blurb }),
+      ]));
+      row.appendChild(ic('chevR', 'chev'));
+      list.appendChild(row);
+    }
+    card.appendChild(list);
+    stack.appendChild(card);
+  },
+
+  guideChapter(ch) {
+    App.modal({
+      title: ch.title,
+      body: box => {
+        for (const p of ch.body) {
+          box.appendChild(U.el('p', { class: 'guide-p', text: p }));
+        }
+        if (ch.tips && ch.tips.length) {
+          box.appendChild(U.el('div', { class: 'kicker', style: 'margin:14px 0 8px', text: 'In short' }));
+          for (const t of ch.tips) {
+            const row = U.el('div', { class: 'guide-tip' });
+            row.appendChild(ic('check', 'accent'));
+            row.appendChild(U.el('span', { text: t }));
+            box.appendChild(row);
+          }
+        }
+      },
+      foot: [{ label: 'Done', class: 'btn', onClick: close => close() }],
+    });
   },
 
   /* ================= weekly schedule ================= */
@@ -81,10 +127,59 @@ Views.plan = {
     }
     stack.appendChild(card);
 
+    const recBtn = btn('Use recommended week', 'btn ghost small', async () => {
+      const a = S.routines.find(r => r.name === 'Full Body A');
+      const b = S.routines.find(r => r.name === 'Full Body B');
+      const c = S.routines.find(r => r.name === 'Full Body C');
+      if (!a || !b || !c) { App.toast('Full Body A/B/C routines not found'); return; }
+      const sure = await App.confirm('Set Mon = Full Body A, Wed = Full Body B, Fri = Full Body C? This hits every muscle 2–3× a week and keeps legs fresh for the long run.', { ok: 'Set week' });
+      if (!sure) return;
+      S.schedule = { 0: a.id, 1: '', 2: b.id, 3: '', 4: c.id, 5: '', 6: '' };
+      Store.save();
+      App.render();
+      App.toast('Recommended week set', { icon: 'check', kind: 'good' });
+    });
+    stack.appendChild(U.el('div', { style: 'display:flex;gap:8px' }, [recBtn]));
+
     stack.appendChild(U.el('p', {
       class: 'small muted', style: 'padding:0 4px',
-      text: 'This template repeats every week. Run days come from your marathon plan in the Run tab — schedule lifts around them (strength 2×/week pairs well with marathon training).',
+      text: 'Hard days hard: the recommended week puts the lower-body session beside your quality run (Wed) and keeps Friday leg-free so Sunday’s long run gets fresh legs. Each muscle lands 2–3× a week — see the Guide.',
     }));
+
+    this.balancePanel(stack);
+  },
+
+  /* Weekly working sets per muscle vs the 10–20 guideline band. */
+  balancePanel(stack) {
+    const sets = Store.weeklyMuscleSets();
+    const order = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core', 'forearms'];
+    const card = U.el('div', { class: 'card' });
+    card.appendChild(U.el('div', { class: 'card-head' }, [U.el('h2', { text: 'Weekly muscle volume' })]));
+
+    const anyScheduled = Object.values(Store.state.schedule).some(Boolean);
+    if (!anyScheduled) {
+      card.appendChild(U.el('p', { class: 'small muted', text: 'Schedule some routines to see weekly sets per muscle.' }));
+      stack.appendChild(card);
+      return;
+    }
+
+    const MAX = 24; // meter scale
+    for (const g of order) {
+      const n = Math.round((sets[g] || 0) * 10) / 10;
+      const row = U.el('div', { class: 'bal-row' });
+      row.appendChild(U.el('span', { class: 'bal-name', text: EXDB.groupName(g) }));
+      const meter = U.el('div', { class: 'bal-meter' });
+      meter.appendChild(U.el('div', { class: 'bal-band' })); // the 10–20 growth zone
+      meter.appendChild(U.el('div', { class: 'bal-fill' + (n >= 10 && n <= 20 ? ' in-band' : n > 22 ? ' high' : ''), style: `width:${Math.min(100, n / MAX * 100)}%` }));
+      row.appendChild(meter);
+      row.appendChild(U.el('span', { class: 'bal-n tnum', text: String(n) }));
+      card.appendChild(row);
+    }
+    card.appendChild(U.el('p', {
+      class: 'small muted', style: 'margin-top:10px',
+      text: 'Counts direct sets (+½ for assisting muscles) from your scheduled week. Shaded zone ≈ 10–20 sets — the productive range for growth; 6–10 maintains. Legs also collect run volume, so lower numbers there are right during marathon training.',
+    }));
+    stack.appendChild(card);
   },
 
   /* ================= routines ================= */
@@ -166,6 +261,12 @@ Views.plan = {
       info.appendChild(U.el('div', { class: 'name', text: ex.name }));
       info.addEventListener('click', () => this.exerciseDetail(it.exerciseId));
       top.appendChild(info);
+      if (ex.pattern && Store.allExercises().some(e => e.pattern === ex.pattern && e.id !== ex.id)) {
+        const swap = U.el('button', { class: 'icon-btn plain', type: 'button', 'aria-label': 'Swap for a similar exercise', title: 'Swap (same movement)' });
+        swap.appendChild(ic('swap'));
+        swap.addEventListener('click', () => this.swapRoutineItem(it, ex));
+        top.appendChild(swap);
+      }
       const del = U.el('button', { class: 'icon-btn plain danger', type: 'button', 'aria-label': 'Remove' });
       del.appendChild(ic('x'));
       del.addEventListener('click', () => { r.items.splice(i, 1); Store.save(); App.render(); });
@@ -209,10 +310,15 @@ Views.plan = {
     });
     exCard.appendChild(U.el('div', { style: 'margin-top:12px' }, [
       btn('+ Add exercise', 'btn soft block', () => App.pickExercise(exId => {
-        r.items.push({ exerciseId: exId, sets: 3, repsMin: 8, repsMax: 12 });
+        const newEx = Store.exById(exId);
+        r.items.push({ exerciseId: exId, sets: 3, repsMin: 8, repsMax: 12, restSec: Store.restFor(newEx) });
         Store.save(); App.render();
       })),
     ]));
+    exCard.appendChild(U.el('p', {
+      class: 'small muted', style: 'margin-top:10px',
+      text: 'Rep-range guide: 3–6 strength · 6–12 muscle · 12–20 isolation & conditioning — all taken to 1–3 reps in reserve. More in Plan → Guide.',
+    }));
     stack.appendChild(exCard);
 
     const actions = U.el('div', { style: 'display:flex;gap:10px' });
@@ -245,6 +351,34 @@ Views.plan = {
       });
     }));
     stack.appendChild(actions);
+  },
+
+  swapRoutineItem(it, ex) {
+    const alts = Store.allExercises().filter(e => e.pattern === ex.pattern && e.id !== ex.id);
+    App.modal({
+      title: `Swap ${ex.name}`,
+      body: box => {
+        box.appendChild(U.el('p', { class: 'small muted', style: 'margin-bottom:8px', text: `Same movement (${EXDB.patternName(ex.pattern)}) — sets, reps and rest stay as they are.` }));
+        const list = U.el('div', { class: 'rowlist' });
+        for (const alt of alts) {
+          const row = U.el('div', { class: 'row tappable' });
+          row.addEventListener('click', () => {
+            box._close();
+            it.exerciseId = alt.id;
+            Store.save();
+            App.render();
+            App.toast(`Swapped to ${alt.name}`, { icon: 'swap', kind: 'good' });
+          });
+          row.appendChild(U.el('div', { class: 'grow' }, [
+            U.el('div', { class: 'title', text: alt.name }),
+            U.el('div', { class: 'sub', text: `${EXDB.groupName(alt.group)} · ${EXDB.equipName(alt.equipment)}` }),
+          ]));
+          row.appendChild(ic('swap', 'chev'));
+          list.appendChild(row);
+        }
+        box.appendChild(list);
+      },
+    });
   },
 
   /* ================= exercise library ================= */
@@ -319,9 +453,41 @@ Views.plan = {
         const meta = U.el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px' });
         meta.appendChild(U.el('span', { class: 'badge accent', text: EXDB.groupName(ex.group) }));
         meta.appendChild(U.el('span', { class: 'badge', text: EXDB.equipName(ex.equipment) }));
+        if (ex.pattern && EXDB.patternName(ex.pattern)) meta.appendChild(U.el('span', { class: 'badge', text: EXDB.patternName(ex.pattern) }));
         if (ex.secondary && ex.secondary.length) meta.appendChild(U.el('span', { class: 'badge', text: '+ ' + ex.secondary.join(', ') }));
         box.appendChild(meta);
         if (ex.cue) box.appendChild(U.el('p', { class: 'small', style: 'color:var(--ink-2)', text: ex.cue }));
+
+        if (ex.how && ex.how.length) {
+          box.appendChild(U.el('div', { class: 'kicker', style: 'margin:14px 0 6px', text: 'How to do it' }));
+          const ol = U.el('ol', { class: 'howto' });
+          for (const step of ex.how) ol.appendChild(U.el('li', { text: step }));
+          box.appendChild(ol);
+        }
+        if (ex.avoid && ex.avoid.length) {
+          box.appendChild(U.el('div', { class: 'kicker', style: 'margin:12px 0 6px', text: 'Avoid' }));
+          for (const a of ex.avoid) {
+            const row = U.el('div', { class: 'guide-tip avoid' });
+            row.appendChild(ic('x', 'danger'));
+            row.appendChild(U.el('span', { text: a }));
+            box.appendChild(row);
+          }
+        }
+
+        // alternatives: same movement pattern
+        if (ex.pattern) {
+          const alts = Store.allExercises().filter(e => e.pattern === ex.pattern && e.id !== ex.id).slice(0, 6);
+          if (alts.length) {
+            box.appendChild(U.el('div', { class: 'kicker', style: 'margin:14px 0 8px', text: 'Same movement — swap options' }));
+            const chips = U.el('div', { class: 'chip-row' });
+            for (const alt of alts) {
+              const c = U.el('button', { class: 'chip', type: 'button', text: alt.name });
+              c.addEventListener('click', () => { box._close(); this.exerciseDetail(alt.id); });
+              chips.appendChild(c);
+            }
+            box.appendChild(chips);
+          }
+        }
 
         if (pr && (pr.e1rm || pr.maxReps || pr.maxSec)) {
           const prRow = U.el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px' });
@@ -395,11 +561,18 @@ Views.plan = {
         track.appendChild(U.el('option', { value: 'time', text: 'Time (seconds)' }));
         form.appendChild(U.el('div', { class: 'field' }, [U.el('label', { text: 'Tracked as' }), track]));
 
+        const pattern = U.el('select');
+        pattern.appendChild(U.el('option', { value: '', text: 'None / other' }));
+        for (const [k, label] of Object.entries(EXDB.PATTERNS)) pattern.appendChild(U.el('option', { value: k, text: label }));
+        form.appendChild(U.el('div', { class: 'field' }, [
+          U.el('label', { text: 'Movement pattern' }), pattern,
+        ]));
+
         const cue = U.el('input', { type: 'text', placeholder: 'Optional form cue' });
         form.appendChild(U.el('div', { class: 'field wide' }, [U.el('label', { text: 'Cue' }), cue]));
 
         box.appendChild(form);
-        box._get = () => ({ name: name.value.trim(), group: group.value, equipment: equip.value, track: track.value, secondary: [], cue: cue.value.trim() });
+        box._get = () => ({ name: name.value.trim(), group: group.value, equipment: equip.value, track: track.value, pattern: pattern.value || null, secondary: [], cue: cue.value.trim() });
       },
       foot: [
         { label: 'Cancel', class: 'btn ghost', onClick: close => close() },

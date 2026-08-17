@@ -17,6 +17,18 @@ Views.lift = {
     const today = U.todayISO();
     const stack = U.el('div', { class: 'stack' });
 
+    // marathon-phase lifting advice (peak / taper / race week)
+    const advice = Marathon.liftingAdvice(S.runPlan);
+    if (advice) {
+      const banner = U.el('div', { class: 'banner' });
+      banner.appendChild(ic('run'));
+      banner.appendChild(U.el('div', { style: 'flex:1;min-width:0' }, [
+        U.el('div', { class: 'b-title', text: advice.phase === 'race' ? 'Race week' : advice.phase === 'taper' ? 'Taper mode' : 'Peak weeks' }),
+        U.el('div', { class: 'b-text', text: advice.text }),
+      ]));
+      stack.appendChild(banner);
+    }
+
     const dow = U.dowIdx(today);
     const scheduled = S.routines.find(r => r.id === S.schedule[dow]);
 
@@ -361,6 +373,21 @@ Views.lift = {
       block.appendChild(U.el('div', { class: 'ex-last', text: `Last time (${U.fmtDate(last.date, 'short')}): ${setsSummary(last.sets, ex.track)}` }));
     }
 
+    // double progression: topped the rep range on all sets last time → suggest the next jump
+    const prog = this.progressionFor(en, ex, last);
+    if (prog) {
+      const chip = U.el('button', { class: 'prog-chip', type: 'button', title: 'Tap to fill the new weight into your empty sets' });
+      chip.appendChild(ic('up'));
+      chip.appendChild(U.el('span', { text: prog.label }));
+      chip.addEventListener('click', () => {
+        for (const s of en.sets) if (!s.done && s.w == null) s.w = prog.newW;
+        Store.save();
+        App.render();
+        App.toast(`Loaded ${U.fmtNum(Store.wOut(prog.newW), 1)} ${Store.wUnit()} — go get it`, { icon: 'up', kind: 'good' });
+      });
+      block.appendChild(chip);
+    }
+
     const timed = ex.track === 'time';
     const heads = U.el('div', { class: 'col-heads' + (timed ? ' timed' : '') });
     heads.appendChild(U.el('span', { text: 'Set' }));
@@ -442,7 +469,7 @@ Views.lift = {
       b.addEventListener('click', fn);
       return b;
     };
-    const wStep = Store.metric() ? 2.5 : 5;
+    let wStep = Store.stepFor(ex); // adaptive: big lifts jump bigger, isolation smaller
     const trim = v => String(Math.round(v * 100) / 100);
     const bumpW = d => {
       const cur = parseNum(wIn.value, true) ?? parseNum(wIn.placeholder, true) ?? 0;
@@ -469,24 +496,40 @@ Views.lift = {
       strip.appendChild(sbtn('−15s', () => bumpS(-15)));
       strip.appendChild(sbtn('+15s', () => bumpS(15)));
     } else {
-      strip.appendChild(sbtn(`−${trim(wStep)}`, () => bumpW(-wStep)));
-      strip.appendChild(sbtn(`+${trim(wStep)}`, () => bumpW(wStep)));
+      const minusB = sbtn(`−${trim(wStep)}`, () => bumpW(-wStep));
+      const plusB = sbtn(`+${trim(wStep)}`, () => bumpW(wStep));
+      strip.appendChild(minusB);
+      strip.appendChild(plusB);
+      const cycler = sbtn('swap', () => {
+        wStep = Store.cycleStep(ex);
+        minusB.textContent = `−${trim(wStep)}`;
+        plusB.textContent = `+${trim(wStep)}`;
+        App.toast(`Step: ${trim(wStep)} ${Store.wUnit()}`, { icon: 'swap' });
+      }, 'icon');
+      cycler.title = 'Change step size for this exercise';
+      cycler.setAttribute('aria-label', 'Change weight step size');
+      strip.appendChild(cycler);
       strip.appendChild(U.el('span', { class: 'sgap' }));
       strip.appendChild(sbtn('−1', () => bumpR(-1)));
       strip.appendChild(sbtn('+1', () => bumpR(1)));
     }
     strip.appendChild(U.el('span', { class: 'spacer' }));
     if (!timed && ex.track === 'wr' && ex.equipment === 'barbell') {
-      strip.appendChild(sbtn('barbell', () => {
+      const plateBtn = sbtn('barbell', () => {
         const v = parseNum(wIn.value, true) ?? parseNum(wIn.placeholder, true);
         this.plateModal(v);
-      }, 'icon'));
+      }, 'icon');
+      plateBtn.setAttribute('aria-label', 'Plate calculator');
+      plateBtn.title = 'Plate calculator';
+      strip.appendChild(plateBtn);
     }
-    strip.appendChild(sbtn('trash', () => {
+    const delBtn = sbtn('trash', () => {
       en.sets.splice(si, 1);
       Store.save();
       App.render();
-    }, 'icon danger'));
+    }, 'icon danger');
+    delBtn.setAttribute('aria-label', 'Delete this set');
+    strip.appendChild(delBtn);
 
     const showStrip = () => { strip.hidden = false; };
     const maybeHideStrip = () => setTimeout(() => {
@@ -524,7 +567,7 @@ Views.lift = {
         Store.save();
         row.classList.add('is-done');
         check.classList.add('done');
-        App.timer.start(en.restSec || Store.state.settings.restSec);
+        App.timer.start(set.warm ? 60 : (en.restSec || Store.state.settings.restSec));
         this.refreshHeader();
       } else {
         set.done = false;
@@ -620,6 +663,97 @@ Views.lift = {
     if (w && el) el.textContent = awProgressStr(w);
   },
 
+  // Double progression: same weight across all working sets, every set at the top
+  // of the rep range → time to add the exercise's step.
+  progressionFor(en, ex, last) {
+    if (!last || !ex || ex.track !== 'wr' || !en.repsMax) return null;
+    const work = last.work.filter(s => s.w != null && s.r);
+    if (work.length < 2) return null;
+    const w0 = work[0].w;
+    if (!work.every(s => Math.abs(s.w - w0) < 0.01)) return null;
+    if (!work.every(s => s.r >= en.repsMax)) return null;
+    if (en.sets.some(s => s.done)) return null; // mid-exercise, stop suggesting
+    const stepKg = Store.wIn(Store.stepFor(ex));
+    const newW = Math.round((w0 + stepKg) * 100) / 100;
+    return {
+      newW,
+      label: `Ready to progress — you topped ${en.repsMax} reps at ${U.fmtNum(Store.wOut(w0), 1)}. Try ${U.fmtNum(Store.wOut(newW), 1)} ${Store.wUnit()}.`,
+    };
+  },
+
+  // Insert a percent-based warm-up ramp before the working sets.
+  addWarmupRamp(en, ex) {
+    if (!ex || ex.track !== 'wr') { App.toast('Warm-up ramps are for weighted lifts'); return; }
+    if (en.sets.some(s => s.warm)) { App.toast('This exercise already has warm-up sets'); return; }
+    let targetKg = null;
+    const typed = en.sets.find(s => s.w != null);
+    if (typed) targetKg = typed.w;
+    if (targetKg == null) {
+      const last = Store.lastPerformance(en.exerciseId);
+      if (last && last.work.length && last.work[0].w != null) targetKg = last.work[0].w;
+    }
+    if (targetKg == null) { App.toast('Type or log a working weight first'); return; }
+
+    const isBar = ex.equipment === 'barbell';
+    const barMin = Store.metric() ? 20 : 45;
+    const roundStep = Store.metric() ? (isBar ? 2.5 : 1) : (isBar ? 5 : 2.5);
+    const t = Store.wOut(targetKg);
+    let ramp;
+    if (t >= (Store.metric() ? 60 : 135)) ramp = [[0.4, 8], [0.6, 5], [0.8, 3]];
+    else if (t >= (Store.metric() ? 35 : 80)) ramp = [[0.5, 6], [0.75, 3]];
+    else ramp = [[0.6, 8]];
+
+    const warmSets = ramp.map(([f, reps]) => {
+      let w = Math.round((t * f) / roundStep) * roundStep;
+      if (isBar) w = Math.max(w, barMin);
+      if (w >= t) w = Math.max(t - roundStep, isBar ? barMin : roundStep);
+      return { w: Store.wIn(w), r: reps, sec: null, done: false, warm: true };
+    });
+    // drop duplicate weights (light targets collapse the ramp)
+    const seen = new Set();
+    const unique = warmSets.filter(s => { const k = Math.round(s.w * 10); if (seen.has(k)) return false; seen.add(k); return true; });
+    en.sets.unshift(...unique);
+    Store.save();
+    App.render();
+    App.toast(`${unique.length} warm-up ${unique.length === 1 ? 'set' : 'sets'} added — fast and crisp`, { icon: 'flame', kind: 'good' });
+  },
+
+  // Swap to another exercise with the same movement pattern.
+  swapExercise(en) {
+    const cur = Store.exById(en.exerciseId);
+    if (!cur || !cur.pattern) { App.toast('No matched alternatives for this exercise'); return; }
+    const alts = Store.allExercises().filter(e => e.pattern === cur.pattern && e.id !== cur.id);
+    if (!alts.length) { App.toast('No alternatives share this movement'); return; }
+    const anyDone = en.sets.some(s => s.done);
+    App.modal({
+      title: `Swap ${cur.name}`,
+      body: box => {
+        box.appendChild(U.el('p', {
+          class: 'small muted', style: 'margin-bottom:8px',
+          text: `Same movement (${EXDB.patternName(cur.pattern)}) — your sets and targets carry over.${anyDone ? ' Sets you already ticked will move to the new exercise.' : ''}`,
+        }));
+        const list = U.el('div', { class: 'rowlist' });
+        for (const alt of alts) {
+          const row = U.el('div', { class: 'row tappable' });
+          row.addEventListener('click', () => {
+            box._close();
+            en.exerciseId = alt.id;
+            Store.save();
+            App.render();
+            App.toast(`Swapped to ${alt.name}`, { icon: 'swap', kind: 'good' });
+          });
+          row.appendChild(U.el('div', { class: 'grow' }, [
+            U.el('div', { class: 'title', text: alt.name }),
+            U.el('div', { class: 'sub', text: `${EXDB.groupName(alt.group)} · ${EXDB.equipName(alt.equipment)}` }),
+          ]));
+          row.appendChild(ic('swap', 'chev'));
+          list.appendChild(row);
+        }
+        box.appendChild(list);
+      },
+    });
+  },
+
   exerciseMenu(en, ei) {
     const w = Store.state.activeWorkout;
     const ex = Store.exById(en.exerciseId);
@@ -634,6 +768,8 @@ Views.lift = {
           list.appendChild(r);
         };
         mkRow('info', 'Exercise details', false, () => Views.plan.exerciseDetail(en.exerciseId));
+        mkRow('flame', 'Add warm-up ramp', false, () => this.addWarmupRamp(en, Store.exById(en.exerciseId)));
+        mkRow('swap', 'Swap exercise (same movement)', false, () => this.swapExercise(en));
         mkRow('timer', `Rest timer for this exercise${en.restSec ? ` (${en.restSec}s)` : ''}`, false, () => this.restOverrideModal(en));
         mkRow('x', 'Remove last set', false, () => {
           if (en.sets.length > 1) en.sets.pop();

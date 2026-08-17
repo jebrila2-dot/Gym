@@ -27,6 +27,11 @@ Views.today = {
     if (liftedToday) lh.appendChild(U.el('span', { class: 'badge good' }, [icNode('check'), 'Done']));
     liftCard.appendChild(lh);
 
+    const liftAdvice = Marathon.liftingAdvice(S.runPlan);
+    if (liftAdvice) {
+      liftCard.appendChild(U.el('p', { class: 'small', style: 'color:var(--ink-2);margin-bottom:8px', text: liftAdvice.text }));
+    }
+
     if (S.activeWorkout) {
       liftCard.appendChild(U.el('p', { class: 'small muted', text: `Workout in progress — ${S.activeWorkout.name}` }));
       liftCard.appendChild(U.el('div', { style: 'margin-top:12px' }, [

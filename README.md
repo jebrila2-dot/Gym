@@ -11,10 +11,10 @@ line of the **London Marathon** ready to run it well.
 
 | Tab | What it does |
 |---|---|
-| **Today** | Race-day countdown, today's scheduled lift, today's planned run, week-at-a-glance, body-weight quick add |
-| **Lift** | Workout logging: previous performance pre-filled, ± steppers on every set, one-tap completion, warm-up-set flagging, per-exercise rest timers with beep, a plate calculator for barbell lifts, PR detection and a finish summary sheet, full editable history |
+| **Today** | Race-day countdown, today's scheduled lift, today's planned run, week-at-a-glance, body-weight quick add, marathon-phase lifting advice |
+| **Lift** | Workout logging: previous performance pre-filled, adaptive ± steppers (big lifts jump 5 kg, isolation 1 kg — tap ⇄ to change), double-progression "ready to progress" chips, auto warm-up ramps, exercise swapping by movement pattern, warm-up-set flagging, per-exercise rest timers, plate calculator, PR detection, finish summary sheet, full editable history |
 | **Run** | Marathon HQ: a generated week-by-week training plan (base → build → peak → taper), run logging with pace, weekly distance vs plan, pace trend, Riegel race predictor (prefers real races), training-pace zones, behind-schedule rebuild nudges |
-| **Plan** | The organiser: weekly schedule template, routine builder with 9 starter routines (PPL, Upper/Lower, Full Body, **Runner's Strength**, Core) with per-exercise rest, and a 125+ exercise library with muscle groups, equipment and form cues |
+| **Plan** | The organiser: weekly schedule with a **muscle-balance panel** (weekly sets per muscle vs the 10–20 band), a recommended full-body week (every muscle 2–3×/week, hard days paired with quality runs), 10 starter routines with evidence-based rest times, a 125+ exercise library with **How-to / Avoid guides and swap suggestions** for every exercise, and a **training guide** (progressive overload, effort/RIR, rep ranges, rest, warm-ups, volume & frequency, lifting through a marathon block, recovery) |
 | **Progress** | Estimated-1RM trends per exercise, weekly tonnage, a tappable training-calendar heatmap, PR board, body-weight tracking |
 
 Charts are hand-rolled SVG with hover tooltips and a "Data" table view on
@@ -51,10 +51,11 @@ Quality-of-life details worth knowing:
    your training paces).
 2. **Run tab** → *Build my plan* → enter how many days a week you can run,
    your current weekly distance and longest recent run.
-3. **Plan tab** → adjust which routines fall on which weekdays (lifting
-   Mon/Wed/Fri is pre-set; *Runner's Strength* 2×/week pairs well with
-   marathon training).
-4. Start logging. The app pre-fills what you lifted last time — beat it.
+3. **Plan tab** → the recommended week is pre-set (Full Body A Mon ·
+   Full Body B Wed beside your quality run · Full Body C Fri, leg-free before
+   the long run). Check the muscle-balance panel as you customise.
+4. Start logging. The app pre-fills last time's numbers, tells you when
+   you're ready to add weight, and builds your warm-up ramps.
 
 ## How the marathon plan works
 

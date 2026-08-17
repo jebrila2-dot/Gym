@@ -250,6 +250,24 @@ const Marathon = (() => {
     return plan.weeks.findIndex(w => w.start === U.mondayOf(iso));
   }
 
+  /* ---------------- lifting advice by marathon phase ---------------- */
+
+  // Concurrent-training guidance surfaced on Today/Lift as the race approaches.
+  function liftingAdvice(plan, iso) {
+    const wk = weekFor(plan, iso || U.todayISO());
+    if (!wk) return null;
+    if (wk.phase === 'peak') {
+      return { phase: 'peak', text: 'Peak running weeks — hold lifting steady and don’t chase PRs. Maintaining is winning right now.' };
+    }
+    if (wk.phase === 'taper') {
+      return { phase: 'taper', text: 'Taper: halve your lifting sets but keep the weights. Intensity keeps strength; volume makes fatigue.' };
+    }
+    if (wk.phase === 'race') {
+      return { phase: 'race', text: 'Race week: no leg work at all. One light upper session early in the week at most — arrive fresh.' };
+    }
+    return null;
+  }
+
   /* ---------------- plan-day ↔ run matching ---------------- */
 
   // Which of a plan week's days are "done", allowing runs shifted within the week.
@@ -324,5 +342,5 @@ const Marathon = (() => {
     return out;
   }
 
-  return { MARATHON_KM, TYPE_LABEL, paces, predict, generate, weekFor, dayFor, nextRunDay, weekIndexOf, weeklySummary, weekCompletion, behindStatus };
+  return { MARATHON_KM, TYPE_LABEL, paces, predict, generate, weekFor, dayFor, nextRunDay, weekIndexOf, weeklySummary, weekCompletion, behindStatus, liftingAdvice };
 })();
