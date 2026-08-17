@@ -51,6 +51,7 @@ Views.progress = {
       Charts.heat(heatBox, {
         counts: Store.activityByDay(),
         label: 'Daily training activity over recent weeks',
+        onDay: iso => this.dayModal(iso),
         tip: iso => {
           const lifts = S2.workouts.filter(w => w.date === iso);
           const runs = S2.runs.filter(r => r.date === iso);
@@ -58,6 +59,7 @@ Views.progress = {
           for (const w of lifts) lines.push(`${w.name} · ${Store.workoutSets(w)} sets`);
           for (const r of runs) lines.push(`Run ${Store.fmtD(r.km, 1)} · ${U.fmtDuration(r.sec)}`);
           if (!lines.length) lines.push('Rest day');
+          lines.push('Tap for details');
           return lines;
         },
       });
@@ -194,6 +196,53 @@ Views.progress = {
     });
   },
 
+  /* ================= day detail (from the heatmap) ================= */
+
+  dayModal(iso) {
+    const S = Store.state;
+    const lifts = S.workouts.filter(w => w.date === iso);
+    const runs = S.runs.filter(r => r.date === iso);
+    const planDay = Marathon.dayFor(S.runPlan, iso);
+    App.modal({
+      title: U.fmtDate(iso, 'long'),
+      body: box => {
+        if (!lifts.length && !runs.length) {
+          box.appendChild(U.el('p', { class: 'small muted', text: 'Rest day — nothing logged.' }));
+        }
+        const list = U.el('div', { class: 'rowlist' });
+        for (const w of lifts) {
+          const row = U.el('div', { class: 'row tappable' });
+          row.addEventListener('click', () => { box._close(); Views.lift.workoutDetail(w); });
+          row.appendChild(ic('barbell', 'accent'));
+          row.appendChild(U.el('div', { class: 'grow' }, [
+            U.el('div', { class: 'title', text: w.name }),
+            U.el('div', { class: 'sub', text: `${Store.workoutSets(w)} sets · ${U.fmtNum(Store.wOut(Store.workoutTonnage(w)), 0)} ${Store.wUnit()}` }),
+          ]));
+          row.appendChild(ic('chevR', 'chev'));
+          list.appendChild(row);
+        }
+        for (const r of runs) {
+          const row = U.el('div', { class: 'row tappable' });
+          row.addEventListener('click', () => { box._close(); Views.run.runDetail(r); });
+          row.appendChild(ic('run', 'runc'));
+          row.appendChild(U.el('div', { class: 'grow' }, [
+            U.el('div', { class: 'title', text: `${Store.fmtD(r.km, 1)} ${Marathon.TYPE_LABEL[r.type] ? Marathon.TYPE_LABEL[r.type].toLowerCase() : 'run'}` }),
+            U.el('div', { class: 'sub', text: `${U.fmtDuration(r.sec)} · ${Store.fmtPace(r.sec / r.km)}` }),
+          ]));
+          row.appendChild(ic('chevR', 'chev'));
+          list.appendChild(row);
+        }
+        box.appendChild(list);
+        if (planDay) {
+          box.appendChild(U.el('p', { class: 'small muted', style: 'margin-top:12px', text: `Plan for this day: ${planDay.day.desc}` }));
+        }
+        const bw = S.bodyweight.find(b => b.date === iso);
+        if (bw) box.appendChild(U.el('p', { class: 'small muted', style: 'margin-top:6px', text: `Body weight: ${Store.fmtW(bw.kg)}` }));
+      },
+      foot: [{ label: 'Close', class: 'btn', onClick: close => close() }],
+    });
+  },
+
   /* ================= PR board ================= */
 
   prBoard(stack) {
@@ -207,10 +256,12 @@ Views.progress = {
     if (!entries.length) return;
     entries.sort((a, b) => b.pr.e1rm.val - a.pr.e1rm.val);
 
+    const vs = this.state();
     const card = U.el('div', { class: 'card' });
     card.appendChild(U.el('div', { class: 'card-head' }, [ic('trophy', 'accent'), U.el('h2', { text: 'Personal records' })]));
     const list = U.el('div', { class: 'rowlist' });
-    for (const { ex, pr } of entries.slice(0, 10)) {
+    const shown = vs.prAll ? entries : entries.slice(0, 10);
+    for (const { ex, pr } of shown) {
       const row = U.el('div', { class: 'row tappable', onclick: () => Views.plan.exerciseDetail(ex.id) });
       row.appendChild(U.el('div', { class: 'grow' }, [
         U.el('div', { class: 'title', text: ex.name }),
@@ -220,6 +271,11 @@ Views.progress = {
       list.appendChild(row);
     }
     card.appendChild(list);
+    if (entries.length > 10) {
+      card.appendChild(U.el('div', { class: 'show-more' }, [
+        btn(vs.prAll ? 'Show fewer' : `Show all (${entries.length})`, 'btn ghost small block', () => { vs.prAll = !vs.prAll; App.render(); }),
+      ]));
+    }
     stack.appendChild(card);
   },
 

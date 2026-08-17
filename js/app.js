@@ -85,13 +85,28 @@ const App = {
   modal(opts) {
     const rootEl = document.getElementById('modal-root');
     const backdrop = U.el('div', { class: 'modal-backdrop' });
-    const sheet = U.el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' });
+    const sheet = U.el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', tabindex: '-1' });
 
+    const prevFocus = document.activeElement;
     const close = () => {
       backdrop.remove();
       document.removeEventListener('keydown', onKey);
+      if (prevFocus && prevFocus.focus && document.body.contains(prevFocus)) prevFocus.focus();
     };
-    const onKey = e => { if (e.key === 'Escape') close(); };
+    const onKey = e => {
+      if (e.key === 'Escape') { close(); return; }
+      if (e.key !== 'Tab') return;
+      // keep keyboard focus inside the sheet
+      const focusables = [...sheet.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')]
+        .filter(el => !el.disabled && el.offsetParent !== null);
+      if (!focusables.length) return;
+      const first = focusables[0], last = focusables[focusables.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === sheet)) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      }
+    };
     document.addEventListener('keydown', onKey);
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
 
@@ -122,6 +137,7 @@ const App = {
 
     backdrop.appendChild(sheet);
     rootEl.appendChild(backdrop);
+    sheet.focus({ preventScroll: true });
     return { close, body };
   },
 
@@ -151,6 +167,21 @@ const App = {
     setTimeout(() => t.remove(), 2750);
   },
 
+  // A toast with one action button (e.g. "Undo", "Refresh"). Stays up longer.
+  actionToast(text, opts) {
+    const rootEl = document.getElementById('toast-root');
+    const t = U.el('div', { class: 'toast action' + (opts.kind === 'good' ? ' good' : '') });
+    if (opts.icon && Icons[opts.icon]) t.appendChild(U.el('span', { html: Icons[opts.icon] }));
+    t.appendChild(U.el('span', { text }));
+    const dismiss = () => { t.classList.add('out'); setTimeout(() => t.remove(), 300); };
+    t.appendChild(U.el('button', {
+      type: 'button', text: opts.label,
+      onclick: () => { dismiss(); opts.onAction && opts.onAction(); },
+    }));
+    rootEl.appendChild(t);
+    setTimeout(dismiss, opts.duration || 6000);
+  },
+
   /* ---------------- rest timer ---------------- */
 
   timer: {
@@ -163,6 +194,7 @@ const App = {
       this.endAt = Date.now() + sec * 1000;
       this.ensureAudio();
       this.renderPill();
+      document.body.classList.add('has-timer');
       if (this._int) clearInterval(this._int);
       this._int = setInterval(() => this.tick(), 250);
     },
@@ -172,6 +204,7 @@ const App = {
       this._int = null;
       this.endAt = null;
       document.getElementById('timer-pill').hidden = true;
+      document.body.classList.remove('has-timer');
     },
 
     add(sec) {
@@ -191,7 +224,10 @@ const App = {
         clearInterval(this._int);
         this._int = null;
         this.endAt = null;
-        setTimeout(() => { document.getElementById('timer-pill').hidden = true; }, 1600);
+        setTimeout(() => {
+          document.getElementById('timer-pill').hidden = true;
+          document.body.classList.remove('has-timer');
+        }, 1600);
       }
     },
 
@@ -235,6 +271,20 @@ const App = {
   pickExercise(onPick) { Views.plan.pickExercise(onPick); },
 
   /* ---------------- settings ---------------- */
+
+  // Marathon goals are hours-scale: read "4:00" as 4 h 00 m (not 4 minutes),
+  // and a bare "4" as 4 hours. Full h:mm:ss always parses as written.
+  parseGoalSec(str) {
+    if (!str || !str.trim()) return null;
+    const sec = U.parseDuration(str);
+    if (sec == null) return null;
+    const parts = str.trim().split(':');
+    if (parts.length <= 2 && sec < 3 * 3600) {
+      const lead = parseInt(parts[0], 10);
+      if (lead >= 1 && lead <= 8) return lead * 3600 + (parts[1] ? parseInt(parts[1], 10) * 60 : 0);
+    }
+    return sec;
+  },
 
   settingsModal() {
     const S = Store.state.settings;
@@ -289,10 +339,19 @@ const App = {
         ]));
 
         const goal = U.el('input', { type: 'text', inputmode: 'numeric', placeholder: 'e.g. 3:59:00', value: S.goalSec ? U.fmtDuration(S.goalSec, true) : '' });
-        goal.addEventListener('input', () => { S.goalSec = U.parseDuration(goal.value); Store.saveSoon(); });
+        const goalHint = U.el('span', { class: 'hint', text: 'Drives your training paces. Leave blank to use the predictor.' });
+        goal.addEventListener('input', () => {
+          S.goalSec = App.parseGoalSec(goal.value);
+          Store.saveSoon();
+          if (!goal.value.trim()) { goalHint.textContent = 'Drives your training paces. Leave blank to use the predictor.'; return; }
+          if (S.goalSec == null) { goalHint.textContent = 'Couldn’t read that — try h:mm:ss, e.g. 3:59:00'; return; }
+          let msg = `Reads as ${U.fmtDuration(S.goalSec, true)}`;
+          if (S.goalSec < 2 * 3600) msg += ' — faster than the world record, check the format';
+          else if (S.goalSec > 8 * 3600) msg += ' — beyond most cut-off times, check the format';
+          goalHint.textContent = msg;
+        });
         box.appendChild(U.el('div', { class: 'field', style: 'margin-bottom:12px' }, [
-          U.el('label', { text: 'Goal time (h:mm:ss)' }), goal,
-          U.el('span', { class: 'hint', text: 'Drives your training paces. Leave blank to use the predictor.' }),
+          U.el('label', { text: 'Goal time (h:mm:ss)' }), goal, goalHint,
         ]));
 
         box.appendChild(U.el('div', { class: 'kicker', style: 'margin:18px 0 10px', text: 'Data' }));
@@ -309,17 +368,14 @@ const App = {
         const fileIn = U.el('input', { type: 'file', accept: 'application/json,.json', style: 'display:none' });
         fileIn.addEventListener('change', () => {
           const f = fileIn.files[0];
+          fileIn.value = '';
           if (!f) return;
           const reader = new FileReader();
           reader.onload = () => {
-            try {
-              Store.importJSON(String(reader.result));
-              App.applyTheme();
-              App.render();
-              App.toast('Backup restored', { icon: 'check', kind: 'good' });
-            } catch (e) {
-              App.toast('That file didn’t look like a Gym backup');
-            }
+            let backup;
+            try { backup = Store.parseBackup(String(reader.result)); }
+            catch (e) { App.toast('That file didn’t look like a Gym backup'); return; }
+            App.importConfirmModal(backup);
           };
           reader.readAsText(f);
         });
@@ -341,6 +397,60 @@ const App = {
         }));
       },
       foot: [{ label: 'Done', class: 'btn', onClick: close => { close(); App.render(); } }],
+    });
+  },
+
+  // Confirmation step before a backup replaces everything.
+  importConfirmModal(backup) {
+    const s = backup.summary;
+    this.modal({
+      title: 'Restore this backup?',
+      body: box => {
+        const when = s.exportedAt ? new Date(s.exportedAt) : null;
+        box.appendChild(U.el('p', {
+          class: 'small', style: 'color:var(--ink-2);margin-bottom:12px',
+          text: when
+            ? `Backup exported ${when.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}.`
+            : 'This backup has no export date.',
+        }));
+        const rows = [
+          ['Workouts', s.workouts], ['Runs', s.runs], ['Routines', s.routines],
+          ['Custom exercises', s.customExercises], ['Body-weight entries', s.bodyweight],
+          ['Marathon plan', s.hasPlan ? 'yes' : 'no'],
+        ];
+        const tbl = U.el('table', { class: 'viz-table' });
+        const tb = U.el('tbody');
+        for (const [k, v] of rows) {
+          const tr = U.el('tr');
+          tr.appendChild(U.el('td', { text: k }));
+          tr.appendChild(U.el('td', { text: String(v) }));
+          tb.appendChild(tr);
+        }
+        tbl.appendChild(tb);
+        box.appendChild(tbl);
+        box.appendChild(U.el('p', {
+          class: 'small muted', style: 'margin-top:12px',
+          text: 'Restoring replaces everything currently in the app on this device.',
+        }));
+        const dl = btn('Download current data first', 'btn ghost small', () => {
+          const blob = new Blob([Store.exportJSON()], { type: 'application/json' });
+          const a = U.el('a', { href: URL.createObjectURL(blob), download: `gym-backup-${U.todayISO()}.json` });
+          document.body.appendChild(a); a.click(); a.remove();
+          App.toast('Current data downloaded', { icon: 'download', kind: 'good' });
+        });
+        box.appendChild(U.el('div', { style: 'margin-top:12px' }, [dl]));
+      },
+      foot: [
+        { label: 'Cancel', class: 'btn ghost', onClick: close => close() },
+        { label: 'Replace & restore', class: 'btn danger', onClick: close => {
+          Store.applyBackup(backup.parsed);
+          App.viewState = {};
+          App.applyTheme();
+          close();
+          App.render();
+          App.toast('Backup restored', { icon: 'check', kind: 'good' });
+        } },
+      ],
     });
   },
 
@@ -368,7 +478,13 @@ const App = {
     this.render();
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.register('sw.js').catch(() => { /* offline mode unavailable */ });
+      // A new version took over (skipWaiting + claim) — offer a refresh for the new assets.
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) return; // first install, nothing to announce
+        this.actionToast('App updated', { label: 'Refresh', icon: 'zap', duration: 10000, onAction: () => location.reload() });
+      });
     }
   },
 };

@@ -11,15 +11,28 @@ line of the **London Marathon** ready to run it well.
 
 | Tab | What it does |
 |---|---|
-| **Today** | Race-day countdown, today's scheduled lift, today's planned run, week-at-a-glance |
-| **Lift** | Workout logging: sets × reps × weight with your previous performance pre-filled, one-tap set completion, automatic rest timer with beep, PR detection, session history |
-| **Run** | Marathon HQ: a generated week-by-week training plan (base → build → peak → taper), run logging with pace, weekly distance vs plan, pace trend, Riegel race predictor, training-pace zones |
-| **Plan** | The organiser: weekly schedule template, routine builder with 9 starter routines (PPL, Upper/Lower, Full Body, **Runner's Strength**, Core), and a 125+ exercise library with muscle groups, equipment and form cues |
-| **Progress** | Estimated-1RM trends per exercise, weekly tonnage, a training-calendar heatmap, PR board, body-weight tracking |
+| **Today** | Race-day countdown, today's scheduled lift, today's planned run, week-at-a-glance, body-weight quick add |
+| **Lift** | Workout logging: previous performance pre-filled, ± steppers on every set, one-tap completion, warm-up-set flagging, per-exercise rest timers with beep, a plate calculator for barbell lifts, PR detection and a finish summary sheet, full editable history |
+| **Run** | Marathon HQ: a generated week-by-week training plan (base → build → peak → taper), run logging with pace, weekly distance vs plan, pace trend, Riegel race predictor (prefers real races), training-pace zones, behind-schedule rebuild nudges |
+| **Plan** | The organiser: weekly schedule template, routine builder with 9 starter routines (PPL, Upper/Lower, Full Body, **Runner's Strength**, Core) with per-exercise rest, and a 125+ exercise library with muscle groups, equipment and form cues |
+| **Progress** | Estimated-1RM trends per exercise, weekly tonnage, a tappable training-calendar heatmap, PR board, body-weight tracking |
 
 Charts are hand-rolled SVG with hover tooltips and a "Data" table view on
 every chart. Light and dark themes (auto-follows your device). Metric or
 imperial units. Installable as a phone app (PWA) and fully offline once loaded.
+
+Quality-of-life details worth knowing:
+
+- Sets you typed but forgot to tick are never dropped silently — finishing asks
+  whether to count them. Warm-up sets (tap the set number) are excluded from
+  PRs, tonnage and pre-fills.
+- Plan days match runs **within the week**, so a long run moved from Sunday to
+  Saturday still ticks off.
+- Runs and past workouts are editable; deletes offer an Undo.
+- Goal times are read sensibly — "4:00" means 4 hours, not 4 minutes, and the
+  Settings field shows how it was understood.
+- Restoring a backup shows what's inside and asks before replacing anything.
+- When a new version is deployed, the app shows an "App updated — Refresh" toast.
 
 ## Using it
 

@@ -11,7 +11,10 @@ Views.run = {
 
     stack.appendChild(Views.today.raceCard(true));
 
-    if (!S.runPlan) {
+    const racePast = S.settings.raceDate < U.todayISO();
+    if (racePast && S.runPlan) {
+      this.blockCompleteCard(stack);
+    } else if (!S.runPlan) {
       const c = U.el('div', { class: 'card pad-lg' });
       c.appendChild(U.el('div', { class: 'card-head' }, [ic('run', 'runc'), U.el('h2', { text: 'Build your marathon plan' })]));
       c.appendChild(U.el('p', {
@@ -23,6 +26,22 @@ Views.run = {
       ]));
       stack.appendChild(c);
     } else {
+      const behind = Marathon.behindStatus(S.runPlan, S.runs);
+      if (behind) {
+        const banner = U.el('div', { class: 'banner' });
+        banner.appendChild(ic('info'));
+        const body = U.el('div', { style: 'flex:1;min-width:0' });
+        body.appendChild(U.el('div', { class: 'b-title', text: 'Fallen behind? It happens to everyone.' }));
+        body.appendChild(U.el('div', {
+          class: 'b-text',
+          text: `The last two weeks: ${Store.fmtD(behind.actualKm, 0)} of ${Store.fmtD(behind.planKm, 0)} planned. Rebuild the plan from today so the ramp-up stays safe — don’t try to catch up in one week.`,
+        }));
+        body.appendChild(U.el('div', { style: 'margin-top:8px' }, [
+          btn('Rebuild from today', 'btn small', () => this.planWizard(true)),
+        ]));
+        banner.appendChild(body);
+        stack.appendChild(banner);
+      }
       this.thisWeekCard(stack);
     }
 
@@ -88,18 +107,21 @@ Views.run = {
       text: `Week ${idx + 1} of ${plan.totalWeeks} · ${Store.fmtD(doneKm, 1)} of ${Store.fmtD(wk.targetKm, 0)} done`,
     }));
 
+    // shifted runs still count: matching is week-level, not date-exact
+    const completion = Marathon.weekCompletion(wk, S.runs);
     const days = U.el('div', { style: 'display:flex;flex-direction:column;gap:9px' });
     for (const d of wk.days) {
       const iso = U.addDays(wk.start, d.dow);
-      const done = S.runs.some(r => r.date === iso);
-      const row = U.el('div', { class: 'runday' + (done ? ' done' : ''), style: 'cursor:pointer', role: 'button', tabindex: '0' });
+      const doneRun = completion.get(d.dow);
+      const row = U.el('div', { class: 'runday' + (doneRun ? ' done' : ''), style: 'cursor:pointer', role: 'button', tabindex: '0' });
       row.appendChild(U.el('span', { class: 'rd-dow', text: U.DOW_SHORT[d.dow] + (iso === today ? ' •' : '') }));
       row.appendChild(U.el('span', { class: `type-dot ${d.type}` }));
       row.appendChild(U.el('span', { class: 'rd-desc small', text: d.desc }));
       row.appendChild(U.el('span', { class: 'rd-km small', text: Store.fmtD(d.km, 1) }));
-      if (done) { const chk = U.el('span', { class: 'rd-check' }); chk.appendChild(ic('check')); row.appendChild(chk); }
+      if (doneRun) { const chk = U.el('span', { class: 'rd-check' }); chk.appendChild(ic('check')); row.appendChild(chk); }
       row.addEventListener('click', () => {
-        if (!done) this.logRunModal({ date: iso, km: d.km, type: d.type === 'race' ? 'race' : d.type });
+        if (doneRun) this.runDetail(doneRun);
+        else this.logRunModal({ date: iso <= today ? iso : today, km: d.km, type: d.type === 'race' ? 'race' : d.type });
       });
       days.appendChild(row);
     }
@@ -179,7 +201,10 @@ Views.run = {
     if (pred) {
       const row = U.el('div', { style: 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap' });
       row.appendChild(U.el('div', { class: 'hero-num', style: 'font-size:34px', text: U.fmtDuration(pred.sec, true) }));
-      row.appendChild(U.el('div', { class: 'small muted', text: `predicted, from your ${Store.fmtD(pred.run.km, 1)} on ${U.fmtDate(pred.run.date)}` }));
+      row.appendChild(U.el('div', {
+        class: 'small muted',
+        text: `predicted, from your ${Store.fmtD(pred.run.km, 1)} ${pred.basis === 'race' ? 'race' : 'run'} on ${U.fmtDate(pred.run.date)}`,
+      }));
       card.appendChild(row);
       if (goal) {
         const diff = pred.sec - goal;
@@ -258,16 +283,16 @@ Views.run = {
       row.appendChild(head);
 
       if (vs.openWeek === i) {
+        const completion = Marathon.weekCompletion(w, S.runs);
         const daysBox = U.el('div', { class: 'wr-days' });
         for (const d of w.days) {
-          const iso = U.addDays(w.start, d.dow);
-          const done = S.runs.some(r => r.date === iso);
-          const dr = U.el('div', { class: 'runday' + (done ? ' done' : '') });
+          const doneRun = completion.get(d.dow);
+          const dr = U.el('div', { class: 'runday' + (doneRun ? ' done' : '') });
           dr.appendChild(U.el('span', { class: 'rd-dow', text: U.DOW_SHORT[d.dow] }));
           dr.appendChild(U.el('span', { class: `type-dot ${d.type}` }));
           dr.appendChild(U.el('span', { class: 'rd-desc small', text: d.desc }));
           dr.appendChild(U.el('span', { class: 'rd-km small', text: Store.fmtD(d.km, 1) }));
-          if (done) { const chk = U.el('span', { class: 'rd-check' }); chk.appendChild(ic('check')); dr.appendChild(chk); }
+          if (doneRun) { const chk = U.el('span', { class: 'rd-check' }); chk.appendChild(ic('check')); dr.appendChild(chk); }
           daysBox.appendChild(dr);
         }
         row.appendChild(daysBox);
@@ -286,10 +311,17 @@ Views.run = {
   recentRunsCard(stack) {
     const S = Store.state;
     if (!S.runs.length) return;
+    App.viewState.run = App.viewState.run || {};
+    const vs = App.viewState.run;
+    vs.runsN = vs.runsN || 10;
+    const all = [...S.runs].reverse();
     const card = U.el('div', { class: 'card' });
-    card.appendChild(U.el('div', { class: 'card-head' }, [U.el('h2', { text: 'Recent runs' })]));
+    card.appendChild(U.el('div', { class: 'card-head' }, [
+      U.el('h2', { text: 'Recent runs' }),
+      U.el('span', { class: 'badge', text: String(all.length) }),
+    ]));
     const list = U.el('div', { class: 'rowlist' });
-    for (const r of [...S.runs].reverse().slice(0, 10)) {
+    for (const r of all.slice(0, vs.runsN)) {
       const row = U.el('div', { class: 'row tappable', onclick: () => this.runDetail(r) });
       row.appendChild(U.el('span', { class: `type-dot ${r.type}` }));
       row.appendChild(U.el('div', { class: 'grow' }, [
@@ -300,6 +332,46 @@ Views.run = {
       list.appendChild(row);
     }
     card.appendChild(list);
+    if (all.length > vs.runsN) {
+      card.appendChild(U.el('div', { class: 'show-more' }, [
+        btn(`Show more (${all.length - vs.runsN} older)`, 'btn ghost small block', () => { vs.runsN += 20; App.render(); }),
+      ]));
+    }
+    stack.appendChild(card);
+  },
+
+  // After race day: celebrate the block, then point at the next one.
+  blockCompleteCard(stack) {
+    const S = Store.state;
+    const plan = S.runPlan;
+    const start = plan.weeks[0].start;
+    const end = U.addDays(plan.weeks[plan.weeks.length - 1].start, 6);
+    const blockRuns = S.runs.filter(r => r.date >= start && r.date <= end);
+    const totalKm = blockRuns.reduce((s, r) => s + r.km, 0);
+    const longest = blockRuns.reduce((m, r) => Math.max(m, r.km), 0);
+    const raceRun = blockRuns.find(r => r.type === 'race' && r.km >= 40);
+
+    const card = U.el('div', { class: 'card pad-lg' });
+    card.appendChild(U.el('div', { class: 'card-head' }, [ic('trophy', 'runc'), U.el('h2', { text: 'Training block complete' })]));
+    if (raceRun) {
+      card.appendChild(U.el('p', {
+        class: 'small', style: 'color:var(--ink-2);margin-bottom:10px',
+        text: `Marathon finished in ${U.fmtDuration(raceRun.sec, true)} — extraordinary. Recover properly: easy weeks, easy pace, big meals.`,
+      }));
+    } else {
+      card.appendChild(U.el('p', {
+        class: 'small', style: 'color:var(--ink-2);margin-bottom:10px',
+        text: 'Race day has passed. If you ran it — log it as a Race and it’ll appear here.',
+      }));
+    }
+    const tiles = U.el('div', { class: 'sum-hero' });
+    tiles.appendChild(tile('Block total', U.fmtNum(Store.dOut(totalKm), 0), null, ` ${Store.dUnit()}`));
+    tiles.appendChild(tile('Longest run', U.fmtNum(Store.dOut(longest), 1), null, ` ${Store.dUnit()}`));
+    tiles.appendChild(tile('Runs', String(blockRuns.length), 'logged'));
+    card.appendChild(tiles);
+    card.appendChild(U.el('div', { style: 'margin-top:12px' }, [
+      btn('Plan the next race', 'btn run block', () => this.planWizard(true)),
+    ]));
     stack.appendChild(card);
   },
 
@@ -326,12 +398,16 @@ Views.run = {
         if (r.note) box.appendChild(U.el('p', { class: 'small', style: 'margin-top:12px;font-style:italic', text: `“${r.note}”` }));
       },
       foot: [
-        { label: 'Delete', class: 'btn ghost', onClick: async close => {
-          const sure = await App.confirm('Delete this run?', { danger: true, ok: 'Delete' });
-          if (!sure) return;
+        { label: 'Delete', class: 'btn ghost', onClick: close => {
+          const removed = r;
           Store.deleteRun(r.id);
           close(); App.render();
+          App.actionToast('Run deleted', {
+            label: 'Undo', icon: 'trash',
+            onAction: () => { Store.addRun(removed); App.render(); },
+          });
         } },
+        { label: 'Edit', class: 'btn ghost', onClick: close => { close(); this.logRunModal({}, r); } },
         { label: 'Close', class: 'btn', onClick: close => close() },
       ],
     });
@@ -339,38 +415,41 @@ Views.run = {
 
   /* ================= log run ================= */
 
-  logRunModal(prefill) {
-    const S = Store.state;
+  logRunModal(prefill, existing) {
+    const src = existing || prefill;
     App.modal({
-      title: 'Log a run',
+      title: existing ? 'Edit run' : 'Log a run',
       body: box => {
         const form = U.el('div', { class: 'form-grid' });
 
-        const date = U.el('input', { type: 'date', value: prefill.date || U.todayISO() });
+        const date = U.el('input', { type: 'date', value: src.date || U.todayISO() });
         form.appendChild(U.el('div', { class: 'field' }, [U.el('label', { text: 'Date' }), date]));
 
         const type = U.el('select');
         for (const t of ['easy', 'long', 'tempo', 'intervals', 'race', 'recovery', 'cross']) {
           const o = U.el('option', { value: t, text: Marathon.TYPE_LABEL[t] });
-          if ((prefill.type || 'easy') === t) o.selected = true;
+          if ((src.type || 'easy') === t) o.selected = true;
           type.appendChild(o);
         }
         form.appendChild(U.el('div', { class: 'field' }, [U.el('label', { text: 'Type' }), type]));
 
         const dist = U.el('input', { type: 'text', inputmode: 'decimal', placeholder: 'e.g. 10' });
-        if (prefill.km) dist.value = String(U.round1(Store.dOut(prefill.km)));
+        if (src.km) dist.value = String(U.round1(Store.dOut(src.km)));
         form.appendChild(U.el('div', { class: 'field' }, [U.el('label', { text: `Distance (${Store.dUnit()})` }), dist]));
 
         const time = U.el('input', { type: 'text', inputmode: 'numeric', placeholder: 'h:mm:ss or mm:ss' });
+        if (existing && existing.sec) time.value = U.fmtDuration(existing.sec);
         form.appendChild(U.el('div', { class: 'field' }, [U.el('label', { text: 'Time' }), time]));
 
         const hr = U.el('input', { type: 'text', inputmode: 'numeric', placeholder: 'optional' });
+        if (existing && existing.hr) hr.value = String(existing.hr);
         form.appendChild(U.el('div', { class: 'field' }, [U.el('label', { text: 'Avg HR (bpm)' }), hr]));
 
         const paceOut = U.el('div', { class: 'field' }, [U.el('label', { text: 'Pace' }), U.el('div', { class: 'badge', style: 'font-size:14px;padding:10px 14px', text: '–' })]);
         form.appendChild(paceOut);
 
         const note = U.el('textarea', { placeholder: 'How did it feel? (optional)', rows: 2 });
+        if (existing && existing.note) note.value = existing.note;
         form.appendChild(U.el('div', { class: 'field wide' }, [U.el('label', { text: 'Notes' }), note]));
 
         const updatePace = () => {
@@ -380,6 +459,7 @@ Views.run = {
         };
         dist.addEventListener('input', updatePace);
         time.addEventListener('input', updatePace);
+        updatePace();
 
         box.appendChild(form);
         box._get = () => ({
@@ -393,13 +473,18 @@ Views.run = {
       },
       foot: [
         { label: 'Cancel', class: 'btn ghost', onClick: close => close() },
-        { label: 'Save run', class: 'btn run', onClick: (close, box) => {
+        { label: existing ? 'Save changes' : 'Save run', class: 'btn run', onClick: (close, box) => {
           const data = box._get();
           if (!data.km || data.km <= 0) { App.toast('Enter a distance'); return; }
           if (!data.sec) { App.toast('Enter a time like 52:30'); return; }
-          Store.addRun(data);
+          if (existing) {
+            Store.updateRun({ ...existing, ...data });
+            App.toast('Run updated', { icon: 'check', kind: 'good' });
+          } else {
+            Store.addRun(data);
+            App.toast('Run logged', { icon: 'check', kind: 'good' });
+          }
           close();
-          App.toast('Run logged', { icon: 'check', kind: 'good' });
           App.render();
         } },
       ],

@@ -52,11 +52,29 @@ const Store = (() => {
     catch (e) { console.warn('Could not save:', e); }
   }
 
-  function exportJSON() { return JSON.stringify(state, null, 2); }
+  function exportJSON() {
+    return JSON.stringify({ ...state, exportedAt: new Date().toISOString() }, null, 2);
+  }
 
-  function importJSON(text) {
+  // Parse + validate a backup without applying it; returns a summary for the confirm step.
+  function parseBackup(text) {
     const parsed = JSON.parse(text); // throws on bad input
     if (!parsed || typeof parsed !== 'object' || !parsed.settings) throw new Error('Not a Gym backup file');
+    return {
+      parsed,
+      summary: {
+        exportedAt: parsed.exportedAt || null,
+        workouts: (parsed.workouts || []).length,
+        runs: (parsed.runs || []).length,
+        routines: (parsed.routines || []).length,
+        customExercises: (parsed.customExercises || []).length,
+        bodyweight: (parsed.bodyweight || []).length,
+        hasPlan: !!parsed.runPlan,
+      },
+    };
+  }
+
+  function applyBackup(parsed) {
     state = Object.assign(defaults(), parsed);
     state.settings = Object.assign(defaults().settings, parsed.settings || {});
     save();
@@ -106,7 +124,7 @@ const Store = (() => {
   function bestSetOf(sets, track) {
     let best = null;
     for (const s of sets) {
-      if (!s.done) continue;
+      if (!s.done || s.warm) continue;
       if (track === 'time') {
         if (s.sec && (!best || s.sec > best.sec)) best = s;
       } else if (track === 'bw') {
@@ -120,7 +138,8 @@ const Store = (() => {
     return best;
   }
 
-  // Chronological history for one exercise: [{date, workoutId, sets, best}]
+  // Chronological history for one exercise: [{date, workoutId, sets, work, best}]
+  // `sets` = all done sets (warm-ups included, flagged); `work` = working sets only.
   function exHistory(exId) {
     const ex = exById(exId);
     const track = ex ? ex.track : 'wr';
@@ -130,7 +149,8 @@ const Store = (() => {
         if (en.exerciseId !== exId) continue;
         const done = en.sets.filter(s => s.done);
         if (!done.length) continue;
-        out.push({ date: w.date, workoutId: w.id, sets: done, best: bestSetOf(en.sets, track) });
+        const work = done.filter(s => !s.warm);
+        out.push({ date: w.date, workoutId: w.id, sets: done, work: work.length ? work : done, best: bestSetOf(en.sets, track) });
       }
     }
     out.sort((a, b) => a.date < b.date ? -1 : 1);
@@ -149,7 +169,7 @@ const Store = (() => {
     const hist = exHistory(exId);
     const pr = { maxW: null, e1rm: null, maxReps: null, maxSec: null };
     for (const h of hist) {
-      for (const s of h.sets) {
+      for (const s of h.work) {
         if (ex.track === 'time') {
           if (s.sec && (!pr.maxSec || s.sec > pr.maxSec.sec)) pr.maxSec = { sec: s.sec, date: h.date };
         } else if (ex.track === 'bw') {
@@ -180,7 +200,7 @@ const Store = (() => {
         for (const pe of w.entries) {
           if (pe.exerciseId !== en.exerciseId) continue;
           for (const s of pe.sets) {
-            if (!s.done) continue;
+            if (!s.done || s.warm) continue;
             if (s.w && s.r) { prior.maxW = Math.max(prior.maxW, s.w); prior.e1 = Math.max(prior.e1, e1rm(s.w, s.r)); }
             if (s.r) prior.reps = Math.max(prior.reps, s.r);
             if (s.sec) prior.sec = Math.max(prior.sec, s.sec);
@@ -189,7 +209,7 @@ const Store = (() => {
       }
       let hit = null;
       for (const s of en.sets) {
-        if (!s.done) continue;
+        if (!s.done || s.warm) continue;
         if (ex.track === 'wr' || ex.track === undefined) {
           if (s.w && s.r && prior.e1 > 0 && e1rm(s.w, s.r) > prior.e1 + 0.01) hit = `${ex.name}: ${fmtW(s.w, 1)} × ${s.r}`;
           else if (s.w && s.r && prior.maxW > 0 && s.w > prior.maxW) hit = `${ex.name}: ${fmtW(s.w, 1)} × ${s.r}`;
@@ -210,13 +230,13 @@ const Store = (() => {
     let kg = 0;
     for (const en of w.entries)
       for (const s of en.sets)
-        if (s.done && s.w && s.r) kg += s.w * s.r;
+        if (s.done && !s.warm && s.w && s.r) kg += s.w * s.r;
     return kg;
   }
 
-  function workoutSets(w) {
+  function workoutSets(w) { // working sets only
     let n = 0;
-    for (const en of w.entries) n += en.sets.filter(s => s.done).length;
+    for (const en of w.entries) n += en.sets.filter(s => s.done && !s.warm).length;
     return n;
   }
 
@@ -262,6 +282,13 @@ const Store = (() => {
     state.runs.sort((a, b) => a.date < b.date ? -1 : 1);
     save();
     return run;
+  }
+
+  function updateRun(run) {
+    const i = state.runs.findIndex(r => r.id === run.id);
+    if (i >= 0) state.runs[i] = run;
+    state.runs.sort((a, b) => a.date < b.date ? -1 : 1);
+    save();
   }
 
   function deleteRun(id) {
@@ -330,11 +357,11 @@ const Store = (() => {
 
   return {
     get state() { return state; },
-    load, save, reset, exportJSON, importJSON,
+    load, save, reset, exportJSON, parseBackup, applyBackup,
     metric, wUnit, dUnit, paceUnit, wOut, wIn, dOut, dIn, fmtW, fmtD, paceOut, fmtPace,
     allExercises, exById, addCustomExercise,
     e1rm, bestSetOf, exHistory, lastPerformance, prsFor, detectPRs,
     workoutTonnage, workoutSets, weeklyLifting, activityByDay, streakDays,
-    addRun, deleteRun, runsInWeek,
+    addRun, updateRun, deleteRun, runsInWeek,
   };
 })();

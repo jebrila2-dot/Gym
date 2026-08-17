@@ -57,10 +57,18 @@ Views.today = {
     runCard.appendChild(rh);
 
     const planDay = Marathon.dayFor(S.runPlan, today);
+    const weekDone = planDay ? Marathon.weekCompletion(planDay.week, S.runs) : null;
+    const coveredBy = planDay && weekDone ? weekDone.get(planDay.day.dow) : null;
     if (ranToday.length) {
       const km = ranToday.reduce((s, r) => s + r.km, 0);
       const sec = ranToday.reduce((s, r) => s + r.sec, 0);
       runCard.appendChild(U.el('p', { class: 'small muted', text: `${Store.fmtD(km)} logged · ${U.fmtDuration(sec)} · ${Store.fmtPace(sec / km)}` }));
+    } else if (planDay && coveredBy) {
+      rh.appendChild(U.el('span', { class: 'badge good' }, [icNode('check'), 'Covered']));
+      runCard.appendChild(U.el('p', {
+        class: 'small muted',
+        text: `Today’s ${Marathon.TYPE_LABEL[planDay.day.type].toLowerCase()} is covered by your ${Store.fmtD(coveredBy.km, 1)} on ${U.relDay(coveredBy.date)}.`,
+      }));
     } else if (planDay) {
       runCard.appendChild(U.el('div', { class: 'runday', style: 'margin-top:2px' }, [
         U.el('span', { class: `type-dot ${planDay.day.type}` }),
@@ -123,6 +131,32 @@ Views.today = {
     }
     stack.appendChild(strip);
 
+    // body-weight quick add
+    const bwCard = U.el('div', { class: 'card' });
+    const bwRow = U.el('div', { style: 'display:flex;gap:8px;align-items:center' });
+    bwRow.appendChild(ic('scale', 'accent'));
+    const latest = S.bodyweight.length ? S.bodyweight[S.bodyweight.length - 1] : null;
+    const loggedToday = latest && latest.date === today;
+    const bwIn = U.el('input', {
+      type: 'text', inputmode: 'decimal', style: 'flex:1',
+      placeholder: loggedToday
+        ? `Today: ${U.fmtNum(Store.wOut(latest.kg), 1)} ${Store.wUnit()}`
+        : latest ? `Weight — last ${U.fmtNum(Store.wOut(latest.kg), 1)} ${Store.wUnit()}` : `Body weight (${Store.wUnit()})`,
+    });
+    bwRow.appendChild(bwIn);
+    bwRow.appendChild(btn('Save', 'btn small', () => {
+      const v = parseNum(bwIn.value, true);
+      if (!v) { App.toast('Enter your weight'); return; }
+      S.bodyweight = S.bodyweight.filter(b => b.date !== today);
+      S.bodyweight.push({ date: today, kg: Store.wIn(v) });
+      S.bodyweight.sort((a, b) => a.date < b.date ? -1 : 1);
+      Store.save();
+      App.toast('Weight logged', { icon: 'check', kind: 'good' });
+      App.render();
+    }));
+    bwCard.appendChild(bwRow);
+    stack.appendChild(bwCard);
+
     root.appendChild(stack);
   },
 
@@ -150,6 +184,12 @@ Views.today = {
     }
     heroWrap.appendChild(U.el('div', { class: 'small muted', text: U.fmtDate(S.settings.raceDate, 'long') }));
     card.appendChild(heroWrap);
+
+    if (days < 0) {
+      card.appendChild(U.el('div', { style: 'margin-top:12px' }, [
+        btn('Set your next race', 'btn run small', () => App.settingsModal()),
+      ]));
+    }
 
     const plan = S.runPlan;
     if (plan && days >= 0) {

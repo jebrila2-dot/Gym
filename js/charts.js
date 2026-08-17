@@ -422,6 +422,10 @@ const Charts = (() => {
           x: mL + wI * col, y: mT + dI * col, width: cell, height: cell, rx: 3, fill,
           stroke: nAct === 0 ? T.grid : 'none', 'stroke-width': nAct === 0 ? 1 : 0,
         });
+        if (cfg.onDay) {
+          rect.setAttribute('style', 'cursor:pointer');
+          rect.addEventListener('click', () => cfg.onDay(iso));
+        }
         rect.addEventListener('pointermove', ev => {
           const crect = container.getBoundingClientRect();
           showTip(container, tip, ev.clientX - crect.left, ev.clientY - crect.top, t => {

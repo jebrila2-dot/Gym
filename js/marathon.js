@@ -35,22 +35,33 @@ const Marathon = (() => {
     const today = todayISO || U.todayISO();
     const horizon = U.addDays(today, -120);
     const farHorizon = U.addDays(today, -240);
-    let candidates = runs.filter(r => r.km >= 8 && r.sec > 0 && r.date >= horizon);
+    const riegel = r => r.sec * Math.pow(MARATHON_KM / r.km, 1.06);
+    const bestOf = list => {
+      let best = null;
+      for (const r of list) {
+        const predSec = riegel(r);
+        if (!best || predSec < best.sec) best = { sec: predSec, run: r };
+      }
+      return best;
+    };
+
+    // True races are the best predictor basis — prefer them when available.
+    const races = runs.filter(r => r.type === 'race' && r.km >= 5 && r.sec > 0 && r.date >= farHorizon);
+    let best = bestOf(races);
+    let basis = 'race';
     let note = null;
-    if (!candidates.length) {
-      candidates = runs.filter(r => r.km >= 5 && r.sec > 0 && r.date >= farHorizon);
-      note = 'Based on a short run — log a longer hard effort (8 km+) for a better estimate.';
+    if (!best) {
+      basis = 'run';
+      best = bestOf(runs.filter(r => r.km >= 8 && r.sec > 0 && r.date >= horizon));
+      if (!best) {
+        best = bestOf(runs.filter(r => r.km >= 5 && r.sec > 0 && r.date >= farHorizon));
+        note = 'Based on a short run — log a longer hard effort (8 km+) or a race for a better estimate.';
+      }
+      if (best && !note) note = 'Training runs under-sell you — log a race or hard time-trial for a sharper estimate.';
     }
-    if (!candidates.length) return null;
-    let best = null;
-    for (const r of candidates) {
-      const predSec = r.sec * Math.pow(MARATHON_KM / r.km, 1.06);
-      if (!best || predSec < best.sec) best = { sec: predSec, run: r };
-    }
-    if (best && best.run.km < 15 && !note) {
-      note = 'Predictions sharpen as your long efforts get longer.';
-    }
-    return { sec: Math.round(best.sec), run: best.run, note };
+    if (!best) return null;
+    if (best.run.km < 15 && !note) note = 'Predictions sharpen as your long efforts get longer.';
+    return { sec: Math.round(best.sec), run: best.run, basis, note };
   }
 
   /* ---------------- plan generation ---------------- */
@@ -239,6 +250,63 @@ const Marathon = (() => {
     return plan.weeks.findIndex(w => w.start === U.mondayOf(iso));
   }
 
+  /* ---------------- plan-day ↔ run matching ---------------- */
+
+  // Which of a plan week's days are "done", allowing runs shifted within the week.
+  // Returns Map(dow -> run). Pass 1: exact date. Pass 2: same effort class in-week.
+  // Pass 3: the long run matches any big unused run (≥70% of target). Pass 4: easy
+  // days soak up leftover runs.
+  function weekCompletion(week, runs) {
+    const done = new Map();
+    if (!week) return done;
+    const end = U.addDays(week.start, 6);
+    const weekRuns = runs.filter(r => r.date >= week.start && r.date <= end)
+      .sort((a, b) => a.date < b.date ? -1 : 1);
+    const used = new Set();
+    const classOf = t => (t === 'tempo' || t === 'intervals' || t === 'race') ? 'quality'
+      : t === 'long' ? 'long' : 'easy';
+
+    const claim = (day, pred) => {
+      if (done.has(day.dow)) return;
+      for (const r of weekRuns) {
+        if (used.has(r.id)) continue;
+        if (pred(r)) { used.add(r.id); done.set(day.dow, r); return; }
+      }
+    };
+
+    for (const d of week.days) claim(d, r => r.date === U.addDays(week.start, d.dow));
+    for (const d of week.days) {
+      if (d.type === 'race') claim(d, r => r.type === 'race');
+      else claim(d, r => classOf(r.type) === classOf(d.type));
+    }
+    for (const d of week.days) {
+      if (d.type === 'long') claim(d, r => r.km >= d.km * 0.7);
+    }
+    for (const d of week.days) {
+      if (classOf(d.type) === 'easy') claim(d, () => true);
+    }
+    return done;
+  }
+
+  // True when the last two completed plan weeks were both badly under target.
+  function behindStatus(plan, runs, todayISO) {
+    if (!plan) return null;
+    const today = todayISO || U.todayISO();
+    const idx = weekIndexOf(plan, today);
+    if (idx < 2) return null;
+    if (plan.weeks[idx] && (plan.weeks[idx].phase === 'taper' || plan.weeks[idx].phase === 'race')) return null;
+    let lowWeeks = 0, planKm = 0, actualKm = 0;
+    for (const i of [idx - 1, idx - 2]) {
+      const w = plan.weeks[i];
+      if (!w || w.targetKm < 1) return null;
+      const end = U.addDays(w.start, 6);
+      const km = runs.filter(r => r.date >= w.start && r.date <= end).reduce((s, r) => s + r.km, 0);
+      planKm += w.targetKm; actualKm += km;
+      if (km < w.targetKm * 0.5) lowWeeks++;
+    }
+    return lowWeeks === 2 ? { planKm: r1(planKm), actualKm: r1(actualKm) } : null;
+  }
+
   /* ---------------- aggregates ---------------- */
 
   // last n weeks (including current): [{monday, actualKm, planKm|null, runs}]
@@ -256,5 +324,5 @@ const Marathon = (() => {
     return out;
   }
 
-  return { MARATHON_KM, TYPE_LABEL, paces, predict, generate, weekFor, dayFor, nextRunDay, weekIndexOf, weeklySummary };
+  return { MARATHON_KM, TYPE_LABEL, paces, predict, generate, weekFor, dayFor, nextRunDay, weekIndexOf, weeklySummary, weekCompletion, behindStatus };
 })();

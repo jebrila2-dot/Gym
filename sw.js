@@ -1,7 +1,7 @@
 /* Offline cache for the app shell. Bump CACHE on every release. */
 'use strict';
 
-const CACHE = 'gym-v1.0.0';
+const CACHE = 'gym-v1.1.0';
 
 const ASSETS = [
   '.',

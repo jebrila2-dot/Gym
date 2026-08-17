@@ -196,6 +196,12 @@ Views.plan = {
       mini.appendChild(U.el('span', { class: 'x', text: '–' }));
       mini.appendChild(hiIn);
       mini.appendChild(U.el('span', { class: 'x', text: ex.track === 'time' ? 'sec' : 'reps' }));
+      mini.appendChild(U.el('span', { class: 'sgap' }));
+      const restIn = miniNum(it.restSec, v => { it.restSec = v && v > 0 ? U.clamp(v, 10, 600) : null; Store.saveSoon(); });
+      restIn.placeholder = String(Store.state.settings.restSec);
+      restIn.title = 'Rest between sets (seconds)';
+      mini.appendChild(restIn);
+      mini.appendChild(U.el('span', { class: 'x', text: 's rest' }));
       bottom.appendChild(mini);
 
       row.appendChild(bottom);
@@ -220,14 +226,23 @@ Views.plan = {
       App.render();
       App.toast('Routine duplicated', { icon: 'copy' });
     }));
-    actions.appendChild(btn('Delete routine', 'btn ghost', async () => {
-      const sure = await App.confirm(`Delete “${r.name}”? Past workouts are kept.`, { danger: true, ok: 'Delete' });
-      if (!sure) return;
+    actions.appendChild(btn('Delete routine', 'btn ghost', () => {
+      const removed = r;
+      const scheduleSlots = Object.keys(S.schedule).filter(k => S.schedule[k] === r.id);
       S.routines = S.routines.filter(x => x.id !== r.id);
-      for (const k of Object.keys(S.schedule)) if (S.schedule[k] === r.id) S.schedule[k] = '';
+      for (const k of scheduleSlots) S.schedule[k] = '';
       Store.save();
       vs.editing = null;
       App.render();
+      App.actionToast(`“${removed.name}” deleted`, {
+        label: 'Undo', icon: 'trash',
+        onAction: () => {
+          S.routines.push(removed);
+          for (const k of scheduleSlots) S.schedule[k] = removed.id;
+          Store.save();
+          App.render();
+        },
+      });
     }));
     stack.appendChild(actions);
   },
@@ -416,6 +431,29 @@ Views.plan = {
         const listWrap = U.el('div', { style: 'margin-top:6px' });
         box.appendChild(listWrap);
 
+        const pickRow = ex => {
+          const row = U.el('div', { class: 'row tappable' });
+          row.addEventListener('click', () => { box._close(); onPick(ex.id); });
+          row.appendChild(U.el('div', { class: 'grow' }, [
+            U.el('div', { class: 'title', text: ex.name }),
+            U.el('div', { class: 'sub', text: `${EXDB.groupName(ex.group)} · ${EXDB.equipName(ex.equipment)}` }),
+          ]));
+          row.appendChild(ic('plus', 'chev'));
+          return row;
+        };
+
+        // Exercises you've actually trained lately, most recent first
+        const recentIds = () => {
+          const seen = [];
+          for (const w of [...Store.state.workouts].reverse()) {
+            for (const en of w.entries) {
+              if (!seen.includes(en.exerciseId)) seen.push(en.exerciseId);
+              if (seen.length >= 8) return seen;
+            }
+          }
+          return seen;
+        };
+
         const renderList = () => {
           U.clear(chips);
           const mkChip = (key, label) => {
@@ -428,20 +466,23 @@ Views.plan = {
 
           U.clear(listWrap);
           const needle = qStr.trim().toLowerCase();
+
+          if (!needle && group === 'all') {
+            const recents = recentIds().map(id => Store.exById(id)).filter(Boolean);
+            if (recents.length) {
+              listWrap.appendChild(U.el('div', { class: 'kicker', style: 'margin:10px 2px 2px', text: 'Recent' }));
+              const rlist = U.el('div', { class: 'rowlist' });
+              for (const ex of recents) rlist.appendChild(pickRow(ex));
+              listWrap.appendChild(rlist);
+              listWrap.appendChild(U.el('div', { class: 'kicker', style: 'margin:16px 2px 2px', text: 'All exercises' }));
+            }
+          }
+
           const filtered = Store.allExercises().filter(ex =>
             (group === 'all' || ex.group === group) &&
             (!needle || ex.name.toLowerCase().includes(needle)));
           const list = U.el('div', { class: 'rowlist' });
-          for (const ex of filtered.slice(0, 50)) {
-            const row = U.el('div', { class: 'row tappable' });
-            row.addEventListener('click', () => { box._close(); onPick(ex.id); });
-            row.appendChild(U.el('div', { class: 'grow' }, [
-              U.el('div', { class: 'title', text: ex.name }),
-              U.el('div', { class: 'sub', text: `${EXDB.groupName(ex.group)} · ${EXDB.equipName(ex.equipment)}` }),
-            ]));
-            row.appendChild(ic('plus', 'chev'));
-            list.appendChild(row);
-          }
+          for (const ex of filtered.slice(0, 50)) list.appendChild(pickRow(ex));
           if (!filtered.length) list.appendChild(U.el('p', { class: 'small muted center', style: 'padding:16px', text: 'No matches.' }));
           listWrap.appendChild(list);
         };
