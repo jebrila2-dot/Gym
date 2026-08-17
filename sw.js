@@ -1,7 +1,7 @@
 /* Offline cache for the app shell. Bump CACHE on every release. */
 'use strict';
 
-const CACHE = 'gym-v1.2.0';
+const CACHE = 'gym-v1.3.0';
 
 const ASSETS = [
   '.',
@@ -11,6 +11,7 @@ const ASSETS = [
   'js/util.js',
   'js/icons.js',
   'js/exercises.js',
+  'js/diagrams.js',
   'js/store.js',
   'js/charts.js',
   'js/marathon.js',

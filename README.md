@@ -14,7 +14,7 @@ line of the **London Marathon** ready to run it well.
 | **Today** | Race-day countdown, today's scheduled lift, today's planned run, week-at-a-glance, body-weight quick add, marathon-phase lifting advice |
 | **Lift** | Workout logging: previous performance pre-filled, adaptive ± steppers (big lifts jump 5 kg, isolation 1 kg — tap ⇄ to change), double-progression "ready to progress" chips, auto warm-up ramps, exercise swapping by movement pattern, warm-up-set flagging, per-exercise rest timers, plate calculator, PR detection, finish summary sheet, full editable history |
 | **Run** | Marathon HQ: a generated week-by-week training plan (base → build → peak → taper), run logging with pace, weekly distance vs plan, pace trend, Riegel race predictor (prefers real races), training-pace zones, behind-schedule rebuild nudges |
-| **Plan** | The organiser: weekly schedule with a **muscle-balance panel** (weekly sets per muscle vs the 10–20 band), a recommended full-body week (every muscle 2–3×/week, hard days paired with quality runs), 10 starter routines with evidence-based rest times, a 125+ exercise library with **How-to / Avoid guides and swap suggestions** for every exercise, and a **training guide** (progressive overload, effort/RIR, rep ranges, rest, warm-ups, volume & frequency, lifting through a marathon block, recovery) |
+| **Plan** | The organiser: weekly schedule with a **muscle-balance panel** (weekly sets per muscle vs the 10–20 band), a recommended full-body week (every muscle 2–3×/week, hard days paired with quality runs), 10 starter routines with evidence-based rest times, a 125+ exercise library with **How-to / Avoid guides, movement diagrams, muscles-worked maps and swap suggestions** for every exercise, and a **training guide** (progressive overload, effort/RIR, rep ranges, rest, warm-ups, volume & frequency, lifting through a marathon block, recovery) |
 | **Progress** | Estimated-1RM trends per exercise, weekly tonnage, a tappable training-calendar heatmap, PR board, body-weight tracking |
 
 Charts are hand-rolled SVG with hover tooltips and a "Data" table view on
@@ -83,6 +83,16 @@ once announced, then *Rebuild plan*).
 - ⚙️ **Settings → Export backup** downloads everything as JSON;
   **Import backup** restores it (e.g. moving to a new phone).
 - Clearing the browser's site data deletes it, so export occasionally.
+
+## Diagrams & imagery
+
+Every exercise's detail page shows a **muscles-worked body map** (front/back)
+and, for all strength movements, a **two-frame movement diagram** (start →
+finish with a motion arrow). These are original inline-SVG illustrations drawn
+by the app itself (`js/diagrams.js`) — no third-party images, nothing fetched
+from the network, nothing with unclear licensing. They render in both themes,
+weigh almost nothing, and work offline. Treat them as public domain (CC0)
+along with the rest of this project.
 
 ## Tech notes
 

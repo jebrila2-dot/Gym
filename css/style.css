@@ -854,6 +854,24 @@ body.has-timer #view { padding-top: 56px; }
 .bal-fill.high { background: var(--warn); }
 .bal-n { width: 34px; flex: none; text-align: right; font-size: 12.5px; font-weight: 700; color: var(--ink); }
 
+/* exercise diagrams */
+.exdiagram {
+  width: 100%;
+  max-width: 330px;
+  height: auto;
+  display: block;
+  margin: 2px auto 0;
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 6px 4px;
+}
+.musclemap {
+  width: 172px;
+  height: auto;
+  display: block;
+  margin: 4px auto 0;
+}
+
 /* guide */
 .guide-p { font-size: 14px; line-height: 1.6; color: var(--ink-2); margin-bottom: 10px; }
 .guide-tip { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--ink-2); padding: 4px 0; }

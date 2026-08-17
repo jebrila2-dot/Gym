@@ -458,6 +458,17 @@ Views.plan = {
         box.appendChild(meta);
         if (ex.cue) box.appendChild(U.el('p', { class: 'small', style: 'color:var(--ink-2)', text: ex.cue }));
 
+        // muscles worked — original front/back map
+        box.appendChild(U.el('div', { class: 'kicker', style: 'margin:14px 0 4px', text: 'Muscles worked' }));
+        box.appendChild(Diagrams.muscleMap(ex));
+
+        // movement diagram (start → finish)
+        const dg = Diagrams.for(ex.id);
+        if (dg) {
+          box.appendChild(U.el('div', { class: 'kicker', style: 'margin:14px 0 6px', text: 'Movement' }));
+          box.appendChild(dg);
+        }
+
         if (ex.how && ex.how.length) {
           box.appendChild(U.el('div', { class: 'kicker', style: 'margin:14px 0 6px', text: 'How to do it' }));
           const ol = U.el('ol', { class: 'howto' });
